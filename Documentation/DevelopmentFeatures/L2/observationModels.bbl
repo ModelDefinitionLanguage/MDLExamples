@@ -1,0 +1,36 @@
+\begin{thebibliography}{}
+
+\bibitem[Beal, 2001]{Beal:2001}
+Beal, S.~L. (2001).
+\newblock Ways to fit a pk model with some data below the quantification limit.
+\newblock {\em Journal of Pharmacokinetics and Pharmacodynamics},
+  28(5):481--504.
+
+\bibitem[Beal et~al., 2006]{NONMEM:2006aa}
+Beal, S.~L., B, S.~L., and (Eds.), B. A.~J. (2006).
+\newblock {\em {NONMEM Users Guides, (1989-2006)}}.
+\newblock {Icon Development Solutions}, Ellicott City, Maryland, USA.
+
+\bibitem[Karlsson et~al., 1995]{Karlsson:1995rm}
+Karlsson, M.~O., Beal, S.~L., and Sheiner, L.~B. (1995).
+\newblock Three new residual error models for population pk/pd analyses.
+\newblock {\em J Pharmacokinet Biopharm}, 23(6):651--72.
+
+\bibitem[Keizer and Karlsson, 2013]{Keizer:2013aa}
+Keizer, R. and Karlsson, M. (2013).
+\newblock Stochastic models.
+\newblock Technical report, Uppsala Pharmacometrics Research Group, Uppsala.
+
+\bibitem[Lavielle, 2014]{LavielleBook:2014}
+Lavielle, M. (2014).
+\newblock {\em Mixed {E}ffects {M}odels for the {P}opulation {A}pproach:
+  {M}odels, {T}asks, {M}ethods and {T}ools}.
+\newblock {Chapman \& Hall/CRC Biostatistics Series}.
+
+\bibitem[Swat et~al., 2015]{Pharmml_06}
+Swat, M.~J., Wimalaratne, S.~M., Kristensen, N.~R., Yvon, F., Moodie, S., and
+  Le~Nov\`{e}re, N. (2015).
+\newblock {Pharmacometrics Markup Language (PharmML), Language Specification
+  for Version 0.6}.
+
+\end{thebibliography}

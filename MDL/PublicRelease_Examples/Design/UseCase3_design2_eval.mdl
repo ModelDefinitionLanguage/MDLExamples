@@ -1,0 +1,421 @@
+# UseCase3 :Population pharmacokinetic and pharmacodynamic model to describe warfarin and PCA response
+# Dosing regimen: single oral administration
+# Structural model 
+#   - 1 compartment model (CL,V and TLAG)
+#   - Indirect response model + inhibitory EMAX model on synthesis
+# Covariate model : Weight on V and CL 
+# Variability model: 
+#   - IIV on CL, V, ka, TLAG,PCA0, C50 and TEQ
+#   - Correlation between CL and V random variables
+#   - PK: Combined residual error model 
+#   - PD: Additive residual error model
+
+# PFIM modifications (EVALUATION)
+# removed correlation between CL and V random variables
+# removed Tlag from the model [Note: could keep Tlag without IIV and fixed]
+# changed parameterisation from KA to TABS
+# removed covariate effects
+
+warfarin_PKPD_turnover_par = parObj{
+	
+   STRUCTURAL{
+# The STRUCTURAL block define the structural model parameters.
+      #THETA
+      POP_CL : {value=0.134,lo=0.01,hi=1} # L/h/70kg
+      POP_V : {value=8.1,lo=0.01,hi=20} # L/70kg
+      POP_TABS : {value=0.575,lo=0.01,hi=24} # h
+      POP_PCA0 : {value=96.7,lo=0.01,hi=200}
+      POP_EMAX : {value=1, lo=0, fix=true}
+      POP_C50 : {value=1.2,lo=0.01,hi=10}
+      POP_TEQ : {value=12.9,lo=0.01,hi=100}
+      #SIGMA
+      RUV_PROP : {value=0.0133, lo=0 }
+      RUV_ADD : {value=0.05, lo=0.0001 } # mg/L
+      RUV_FX : {value=15.3, lo=0 }
+   }# end STRUCTURAL
+
+   VARIABILITY{
+      #OMEGA
+      PPV_CL : {value=0.0638 ,type is sd}
+      PPV_V : {value=0.0168 ,type is sd}
+      PPV_TABS : {value=0.691 ,type is sd}
+      PPV_PCA0 : {value=0.00377 ,type is sd}
+      PPV_EMAX : {value=0 ,type is sd,fix=true}
+      PPV_C50 : {value=0.21 ,type is sd}
+      PPV_TEQ : {value=0.0165 ,type is sd}
+   }# end VARIABILITY
+
+} # end of parameter object
+
+warfarin_PKPD_turnover_mdl = mdlObj{
+	IDV { T }
+
+	VARIABILITY_LEVELS(reference=ID){
+		ID : { level=2, type is parameter }
+		DV : { level=1, type is observation }	
+	}
+	
+# The STRUCTURAL_PARAMETERS Block defines the structural model parameters.
+   STRUCTURAL_PARAMETERS{
+# A name for each parameter is required. Other attributes such as units are optional.
+# Units may be used to achieve consistency between the parameter, data and model object values.
+# This could be implemented during the WP2 translation process.
+
+      #THETA
+      POP_CL
+      POP_V
+      POP_TABS
+      POP_PCA0
+      POP_EMAX
+      POP_C50
+      POP_TEQ
+      #SIGMA
+      RUV_PROP
+      RUV_ADD
+      RUV_FX
+    }# end STRUCTURAL_PARAMETERS
+
+   VARIABILITY_PARAMETERS{
+# The VARIABILITY_PARAMETERS Block defines the variability parameters.
+      #OMEGA
+      PPV_CL
+      PPV_V
+      PPV_TABS
+      PPV_PCA0
+      PPV_EMAX
+      PPV_C50
+      PPV_TEQ
+   }# end VARIABILITY_PARAMETERS
+
+   RANDOM_VARIABLE_DEFINITION(level=ID){
+# The RANDOM_VARIABLE_DEFINITION block is used to define the distribution of random variables.
+      ETA_CL ~ Normal( mean=0, sd=PPV_CL) 
+      ETA_V ~ Normal( mean=0, sd=PPV_V)
+      ETA_TABS ~ Normal( mean=0, sd=PPV_TABS)
+      ETA_PCA0 ~ Normal( mean=0, sd=PPV_PCA0)
+      ETA_EMAX ~ Normal( mean=0, sd=PPV_EMAX)
+      ETA_C50 ~ Normal( mean=0, sd=PPV_C50)
+      ETA_TEQ ~ Normal( mean=0, sd=PPV_TEQ)
+   }# end RANDOM_VARIABLE_DEFINITION
+
+   INDIVIDUAL_VARIABLES{
+# The INDIVIDUAL_VARIABLES block is used to express the individual variables and their distribution.
+# If this is not a population model then this block is not required.
+		CL : { type is linear, trans is ln, pop = POP_CL, ranEff = [ETA_CL]  }
+		V : { type is linear, trans is ln, pop = POP_V, ranEff = [ETA_V]  }
+		TABS : { type is linear, trans is ln, pop = POP_TABS, ranEff = [ETA_TABS]  }
+		PCA0 : { type is linear, trans is ln, pop = POP_PCA0, ranEff = [ETA_PCA0]  }
+		EMAX : { type is linear, trans is ln, pop = POP_EMAX, ranEff = [ETA_EMAX]  }
+		C50 : { type is linear, trans is ln, pop = POP_C50, ranEff = [ETA_C50]  }
+		TEQ : { type is linear, trans is ln, pop = POP_TEQ, ranEff = [ETA_TEQ]  }
+   }# end INDIVIDUAL_VARIABLES
+
+   MODEL_PREDICTION{
+	  KA = ln(2)/TABS
+   	  KPCA=ln(2)/TEQ
+      RPCA=PCA0*KPCA
+   DEQ{
+      RATEIN= KA*GUT
+	  GUT : { deriv =(- RATEIN), init = 0, x0 = 0 }
+	  CENTRAL : { deriv =(RATEIN - CL * CENTRAL / V), init = 0, x0 = 0 } 
+      CC=CENTRAL/V
+
+      DPCA=PCA
+      PD=1-EMAX*CC/(C50+CC)			
+      PCA : {deriv=RPCA*PD - KPCA*DPCA, init = PCA0}
+   	  }# end ODE
+   }# end MODEL_PREDICTION
+
+	RANDOM_VARIABLE_DEFINITION(level=DV){
+      EPS_CP ~ Normal( mean=0, var=1)
+      EPS_PCA ~ Normal( mean=0, var=1)
+	}
+
+   OBSERVATION{
+   	 	CP_obs : {type is combinedError1, additive = RUV_ADD, proportional=RUV_PROP,  eps=EPS_CP, prediction= CC}
+   	 	PCA_obs : {type is additiveError, additive = RUV_FX,  eps=EPS_PCA, prediction= PCA}
+   }# end OBSERVATION
+} # end of model object
+# Design object
+
+warfarin_PKPD_turnover_design = designObj{
+	DECLARED_VARIABLES{ 
+		GUT::dosingTarget
+		CP_obs::observation
+		PCA_obs::observation
+	}
+	INTERVENTION{
+ 	admin1 : {type is bolus, input=GUT, amount=100, doseTime=[0] }
+ 	admin2 : {type is bolus, input=GUT, amount=120, doseTime=[0] }
+ 	admin3 : {type is bolus, input=GUT, amount=60, doseTime=[0] }
+ 	admin4 : {type is bolus, input=GUT, amount=113, doseTime=[0] }
+ 	admin5 : {type is bolus, input=GUT, amount=90, doseTime=[0] }
+ 	admin6 : {type is bolus, input=GUT, amount=135, doseTime=[0] }
+ 	admin7 : {type is bolus, input=GUT, amount=75, doseTime=[0] }
+ 	admin8 : {type is bolus, input=GUT, amount=105, doseTime=[0] }
+ 	admin9 : {type is bolus, input=GUT, amount=123, doseTime=[0] }
+ 	admin10 : {type is bolus, input=GUT, amount=85, doseTime=[0] }
+ 	admin11 : {type is bolus, input=GUT, amount=87, doseTime=[0] }
+ 	admin12 : {type is bolus, input=GUT, amount=117, doseTime=[0] }
+ 	admin13 : {type is bolus, input=GUT, amount=112, doseTime=[0] }
+ 	admin14 : {type is bolus, input=GUT, amount=95.5, doseTime=[0] }
+ 	admin15 : {type is bolus, input=GUT, amount=88.5, doseTime=[0] }
+ 	admin16 : {type is bolus, input=GUT, amount=93, doseTime=[0] }
+ 	admin17 : {type is bolus, input=GUT, amount=110, doseTime=[0] }
+ 	admin18 : {type is bolus, input=GUT, amount=115, doseTime=[0] }
+ 	admin19 : {type is bolus, input=GUT, amount=153, doseTime=[0] }
+ 	admin20 : {type is bolus, input=GUT, amount=125, doseTime=[0] }
+ 	}
+
+	SAMPLING{
+		winPK : {type is simple, outcome=CP_obs, sampleTime = [0.0001, 24, 36, 48, 72, 96, 120] }
+    	winPD : { type is simple, outcome=PCA_obs, sampleTime = [0.0001, 24, 36, 48, 72, 96, 120] }
+    	sampPKPD : {type is combi, combination=[winPK,winPD] }
+        }
+
+  STUDY_DESIGN{
+	arm1 : {
+		armSize=3,
+		interventionSequence=[{
+			admin=admin1,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm2 : {
+		armSize=4,
+		interventionSequence=[{
+			admin=admin2,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm3 : {
+		armSize=1,
+		interventionSequence=[{
+			admin=admin3,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm4 : {
+		armSize=3,
+		interventionSequence=[{
+			admin=admin4,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm5 : {
+		armSize=1,
+		interventionSequence=[{
+			admin=admin5,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm6 : {
+		armSize=1,
+		interventionSequence=[{
+			admin=admin6,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm7 : {
+		armSize=2,
+		interventionSequence=[{
+			admin=admin7,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm8 : {
+		armSize=2,
+		interventionSequence=[{
+			admin=admin8,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm9 : {
+		armSize=1,
+		interventionSequence=[{
+			admin=admin9,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm10 : {
+		armSize=2,
+		interventionSequence=[{
+			admin=admin10,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm11 : {
+		armSize=2,
+		interventionSequence=[{
+			admin=admin11,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm12 : {
+		armSize=1,
+		interventionSequence=[{
+			admin=admin12,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm13 : {
+		armSize=2,
+		interventionSequence=[{
+			admin=admin13,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm14 : {
+		armSize=1,
+		interventionSequence=[{
+			admin=admin14,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm15 : {
+		armSize=1,
+		interventionSequence=[{
+			admin=admin15,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm16 : {
+		armSize=2,
+		interventionSequence=[{
+			admin=admin16,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm17 : {
+		armSize=1,
+		interventionSequence=[{
+			admin=admin17,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm18 : {
+		armSize=1,
+		interventionSequence=[{
+			admin=admin18,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm19 : {
+		armSize=1,
+		interventionSequence=[{
+			admin=admin19,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	arm20 : {
+		armSize=1,
+		interventionSequence=[{
+			admin=admin20,
+			start=0
+		}],
+		samplingSequence=[{
+			sample=sampPKPD,
+			start=0
+		}]
+	}
+	}
+}
+
+
+# EVALUATE task - implicit version with target SETTINGS
+warfarin_PKPD_turnover_taskEval = taskObj {
+	EVALUATE{ 
+		# Define tool specific settings in block
+		TARGET_SETTINGS(target = "PFIM"){ # here we explicit some elements of the task
+			set project = "warfarin_PKPD_turn",
+			output = "Stdout_warfarin_PKPD_turn_eval.out",
+			graphSupA = 360,
+			graphSupB = 360
+			}
+		}
+} # end of task object
+
+warfarin_PK_ODE_mog = mogObj {
+    OBJECTS{
+		warfarin_PKPD_turnover_design : { type is designObj }
+		warfarin_PKPD_turnover_mdl : { type is mdlObj }
+		warfarin_PKPD_turnover_par : { type is parObj }
+		warfarin_PKPD_turnover_taskEval : { type is taskObj }
+	}
+}

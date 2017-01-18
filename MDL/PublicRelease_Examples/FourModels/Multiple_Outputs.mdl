@@ -1,0 +1,107 @@
+Multiple_outputs_dat = dataObj{
+    DECLARED_VARIABLES{Ad::dosingVar 
+    				   Concentration::observation
+    				   Effect::observation
+    				   Level withCategories {c1, c2, c3} }
+
+     DATA_INPUT_VARIABLES{
+      ID : {use is id }
+      TIME : {use is idv }
+      WT : {use is covariate }
+      AGE : {use is covariate }
+      SEX : {use is catCov withCategories {female when 0, male when 1} }
+      AMT : {use is amt, variable=Ad }
+      DVID : {use is dvid }  
+      DV : {use is dv, define={1 in DVID as Concentration, 
+      						   2 in DVID as Effect, 
+      						   3 in DVID as {Level.c1 when 1, Level.c2 when 2, Level.c3 when 3 } } 
+			}
+      MDV : {use is mdv}
+   }# end HEADER
+
+   SOURCE{
+     srcfile:{file="warfarin_conc_pca.csv",
+      inputFormat is nonmemFormat}
+   }# end FILE
+} # end data object
+
+Multiple_outputs_par = parObj{
+   STRUCTURAL{
+     ka: {value=0.3, fix=true}
+     V: {value=8, fix=true}
+     k: {value=0.1, fix=true}  
+     a1: {value=0.2, fix=true}
+     Emax: {value=10, fix=true}
+     EC50: {value=1, fix=true}
+     a2: {value=0.5, fix=true}
+     th1: {value=-2, fix=true}
+     th2: {value=0.3, fix=true}
+     th3: {value=1.5, fix=true}
+# The STRUCTURAL block define the structural model parameters.
+   }# end STRUCTURAL
+
+} # end of parameter object
+
+Multiple_outputs_mdl = mdlObj{
+	IDV { T }
+
+	VARIABILITY_LEVELS{
+		DV : { level=1, type is observation }	
+	}
+# The STRUCTURAL_PARAMETERS Block defines the structural model parameters.
+   STRUCTURAL_PARAMETERS{ka V k a1 Emax EC50 a2 th1 th2 th3}
+
+   MODEL_PREDICTION{
+   DEQ{
+	  Ad : { deriv =(- ka*Ad), init = 0, x0 = 0 }
+	  Ac : { deriv =(ka*Ad - k*Ac), init = 0, x0 = 0 } 
+   	  }# end ODE
+   	  Cc = Ac/V
+
+      E = Emax*Cc/(EC50+Cc)			
+      
+      lp1 = th1 + th2*Cc
+      lp2 = th2 + th3*Cc + th3
+      
+	  P0 = 1/(1+exp(-lp1))  #invLogit(A0)
+	  P1 = 1/(1+exp(-lp2))  #invLogit(A1)
+	  
+	  Prob1 = P0
+	  Prob2 = P1 - P0
+	  Prob3 = 1 - P1
+      }# end MODEL_PREDICTION
+
+	RANDOM_VARIABLE_DEFINITION(level=DV){
+      EPS_Conc ~ Normal( mean=0, var=1)
+      EPS_Eff ~ Normal( mean=0, var=1)
+	 
+	  Level withCategories{ c1, c2, c3 } ~  CategoricalOrdered1(categoryProb=[Prob1, Prob2, Prob3])
+	}
+
+   OBSERVATION{
+   	 Concentration : {type is additiveError, additive = a1, prediction = Cc, eps= EPS_Conc}
+   
+   	 Effect : {type is additiveError, additive = a2, eps = EPS_Eff, prediction = E }
+	 
+	 :: {type is categorical, variable=Level}
+   }# end OBSERVATION
+} # end of model object
+
+Multiple_outputs_task = taskObj {
+	ESTIMATE {
+	    set algo is saem
+	} #end ESTIMATE sub block
+} # end of task object
+
+Multiple_outputs_Model_mog = mogObj {
+	OBJECTS{
+		Multiple_outputs_dat : { type is dataObj }
+		Multiple_outputs_mdl : { type is mdlObj }
+		Multiple_outputs_par : { type is parObj }
+		Multiple_outputs_task : { type is taskObj }
+	}
+}
+
+
+
+

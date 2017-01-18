@@ -1,0 +1,147 @@
+# UseCase19 : L2 - correlated EPS for modelling parent and metabolite.
+# Warfarin population pharmacokinetic model
+# Dosing regimen: single oral administration (at time 0)
+# Structural model : 1 compartment model (CL,V and TLAG)
+# Covariate model : Weight on V and CL 
+# Variability model: 
+#	- L2 records indicate replicate observations and correlation in EPS
+#	- Assuming here that there are duplicate measurements at each time point
+#   - IIV on CL, V, ka and TLAG
+#   - Correlation between CL and V random variables
+#   - Combined residual error model
+
+  
+warfarin_PK_PARENT_METABOLITE_dat = dataObj {
+	DECLARED_VARIABLES{INPUT_KA::dosingTarget Parent::observation Metabolite::observation}
+
+	DATA_INPUT_VARIABLES {
+		ID : { use is id }
+		TIME : { use is idv }
+		WT : { use is covariate }
+		AMT : { use is amt, variable = INPUT_KA }
+		DV : { use is dv, define={1 in L2 as Parent, 2 in L2 as Metabolite} }
+		MDV : { use is mdv }
+		logtWT:{ use is covariate }  
+		L2 : {use is dvid}
+	} # end DATA_INPUT_VARIABLES
+	
+	SOURCE {
+	    srcfile : {file = "warfarin_conc_Parent_Metabolite.csv", 
+            inputFormat is nonmemFormat } 
+	} # end SOURCE
+} # end data object
+
+warfarin_PK_PARENT_METABOLITE_par = parObj {
+	# By default a parameter is to be estimated if fix is omitted
+ 	STRUCTURAL {
+		POP_CL : { value = 0.1, lo = 0.001 }
+		POP_V : { value = 8, lo = 0.001 } 
+		POP_KA : { value = 0.362, lo = 0.001 }
+		POP_TLAG : { value=1, lo=0.001 }
+		BETA_CL_WT : { value = 0.75, fix = true }
+		BETA_V_WT : { value = 1, fix = true } 
+		} # end STRUCTURAL
+	VARIABILITY {
+		PPV_CL : { value = 0.1 }
+		PPV_V : { value = 0.1 }
+		PPV_KA : { value = 0.1 }
+		PPV_TLAG : { value = 0.1, fix=true }
+		CORR_CL_V : { value = 0.01 }
+		CORR_EPSP_EPSM : { value = 0.01 }
+		RUV_PROP_P : { value = 0.1, lo = 0 }
+		RUV_ADD_P : { value = 0.1, lo = 0.0001 } 
+		RUV_PROP_M : { value = 0.1, lo = 0 }
+		RUV_ADD_M : { value = 0.1, lo = 0.0001 } 
+	} # end VARIABILITY
+} # end of parameter object 
+
+warfarin_PK_PARENT_METABOLITE_mdl = mdlObj {
+	IDV{ T }
+
+	COVARIATES{
+		logtWT
+	}
+
+	VARIABILITY_LEVELS{
+		ID : { level=2, type is parameter }
+		DV : { level=1, type is observation }
+	} 
+
+	STRUCTURAL_PARAMETERS { 
+		POP_CL
+		POP_V
+		POP_KA
+		POP_TLAG
+		BETA_CL_WT
+		BETA_V_WT
+	} # end STRUCTURAL_PARAMETERS
+	
+	VARIABILITY_PARAMETERS {
+		PPV_CL
+		PPV_V
+		PPV_KA
+		PPV_TLAG
+		CORR_CL_V
+		CORR_EPSP_EPSM
+		RUV_ADD_P
+		RUV_PROP_P
+		RUV_ADD_M
+		RUV_PROP_M
+	} # end VARIABILITY_PARAMETERS 
+	
+	RANDOM_VARIABLE_DEFINITION(level=ID) {
+		ETA_CL ~ Normal(mean=0, sd = PPV_CL)
+		ETA_V ~ Normal(mean = 0, sd = PPV_V)
+		ETA_KA ~ Normal(mean = 0, sd = PPV_KA)
+		ETA_TLAG ~ Normal(mean = 0, sd = PPV_TLAG)
+		:: {type is correlation, rv1=ETA_CL, rv2=ETA_V, value=CORR_CL_V}
+	} # end RANDOM_VARIABLE_DEFINITION 
+
+	
+	INDIVIDUAL_VARIABLES { 
+		CL : {type is linear, trans is ln, pop = POP_CL, fixEff = {coeff=BETA_CL_WT, cov=logtWT} , ranEff = ETA_CL}
+		V :  {type is linear, trans is ln, pop = POP_V, fixEff = {coeff=BETA_V_WT, cov=logtWT} , ranEff = ETA_V }
+	    KA : {type is linear, trans is ln, pop = POP_KA, ranEff = ETA_KA }
+	    TLAG : {type is linear, trans is ln, pop = POP_TLAG, ranEff = ETA_TLAG }
+	} # end INDIVIDUAL_VARIABLES
+
+	MODEL_PREDICTION {
+		COMPARTMENT {
+			INPUT_KA      : {type is depot, to=CENTRAL, ka=KA, tlag=TLAG}
+#			INPUT_CENTRAL : {type is direct, to = CENTRAL}
+			CENTRAL       : {type is compartment}
+                     	 :: {type is elimination, from=CENTRAL, v=V, cl=CL}
+   		}# end COMPARTMENT
+
+	    CC = CENTRAL / V 
+	    METAB = CC / 100
+	} # end MODEL_PREDICTION
+	
+	RANDOM_VARIABLE_DEFINITION(level=DV){
+	    EPS_P ~ Normal(mean=0, var=1)
+	    EPS_M ~ Normal(mean=0, var=1)
+	    ::{type is correlation, rv1=EPS_P, rv2=EPS_M, value=CORR_EPSP_EPSM}
+#		EPS ~ MultivariateNormal1(mean=[0,0], var=triangle([EPS_P, CORR_EPSP_EPSM, EPS_M], true))
+	}
+
+	OBSERVATION {
+	    Parent : {type is combinedError1, additive = RUV_ADD_P, proportional = RUV_PROP_P, eps = EPS_P, prediction = CC} 
+	    Metabolite : {type is combinedError1, additive = RUV_ADD_M, proportional = RUV_PROP_M, eps = EPS_M, prediction = METAB}
+	} # end OBSERVATION
+} # end of model object
+
+warfarin_PK_ODE_task = taskObj {
+	ESTIMATE{ 
+		set algo is saem
+	}
+} # end of task object
+
+
+warfarin_PK_L2_mog = mogObj {
+	OBJECTS{
+		warfarin_PK_PARENT_METABOLITE_dat : { type is dataObj }
+		warfarin_PK_PARENT_METABOLITE_mdl : { type is mdlObj }
+		warfarin_PK_PARENT_METABOLITE_par : { type is parObj }
+		warfarin_PK_ODE_task : { type is taskObj }
+	}
+}

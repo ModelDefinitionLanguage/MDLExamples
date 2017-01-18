@@ -1,0 +1,144 @@
+# UseCase2 : Warfarin population pharmacokinetic model using analytical solutions
+# Original version (ESTIMATION)
+# Dosing regimen: single oral administration (at time 0)
+# Structural model : 1 compartment model (CL,V and TLAG)
+# Covariate model : Weight on V and CL 
+# Variability model: 
+#   - IIV on CL, V, ka and TLAG
+#   - Correlation between CL and V random variables
+#   - Combined residual error model
+
+# PFIM modifications (EVALUATION)
+# removed correlation between CL and V random variables
+# removed Tlag from the model [Note: could keep Tlag without IIV and fixed]
+# covariate effect: SEX affects CL
+
+
+warfarin_PK_PRED_par = parObj {
+
+	# By default a parameter is to be estimated if fix is omitted
+ 	STRUCTURAL {
+		POP_CL : { value = 0.1, lo = 0.001 }
+		POP_V : { value = 8, lo = 0.001 } 
+		POP_KA : { value = 0.362, lo = 0.001 }
+		POP_FV_FEM : { value=1.5, lo = 0 }
+		RUV_PROP : { value = 0.1, lo = 0 }
+		RUV_ADD : { value = 0.1, lo = 0.0001} 
+		} # end STRUCTURAL
+	VARIABILITY {
+		PPV_CL : { value = 0.1, type is sd }
+		PPV_V : { value = 0.1, type is sd }
+		PPV_KA : { value = 0.1, type is sd }
+	} # end VARIABILITY
+} # end of parameter object 
+
+warfarin_PK_PRED_mdl = mdlObj {
+	IDV { T }
+
+	VARIABILITY_LEVELS(reference=ID){
+		ID : { level=2, type is parameter }
+		DV : { level=1, type is observation }
+   }
+	COVARIATES{
+		SEX withCategories {female, male} 
+	}
+
+	STRUCTURAL_PARAMETERS {
+		POP_CL
+		POP_V
+		POP_KA
+		POP_FV_FEM
+		RUV_PROP
+		RUV_ADD
+	} # end STRUCTURAL_PARAMETERS
+	
+	VARIABILITY_PARAMETERS {
+		PPV_CL
+		PPV_V
+		PPV_KA
+	} # end VARIABILITY_PARAMETERS 
+	
+	RANDOM_VARIABLE_DEFINITION(level=ID) {
+		ETA_CL ~ Normal(mean = 0, sd = PPV_CL)
+		ETA_V ~ Normal(mean = 0, sd = PPV_V)
+		ETA_KA ~ Normal(mean = 0, sd = PPV_KA)
+	} # end RANDOM_VARIABLE_DEFINITION 
+	
+	INDIVIDUAL_VARIABLES { 
+	    CL : {type is linear, trans is ln, pop = POP_CL, ranEff = ETA_CL }
+		V : { type is linear, trans is ln, pop = POP_V, 	    		
+				fixEff = [{coeff = POP_FV_FEM, catCov = SEX.female }], 
+				ranEff = [ETA_V]  }
+		KA : { type is linear, trans is ln, pop = POP_KA, ranEff = [ETA_KA]  }
+	} # end INDIVIDUAL_VARIABLES
+	
+	MODEL_PREDICTION {
+	    D::dosingVar # dosing variable
+	    CC =  (D/V) * KA/(KA-CL/V) * (exp(-CL/V * (T))- exp(-KA*(T)) )
+	} # end MODEL_PREDICTION
+
+	RANDOM_VARIABLE_DEFINITION(level=DV){
+		EPS_Y ~ Normal(mean = 0, var = 1) # This maps the standard error model in PharmML. The error model is predefined. 
+	}
+
+	OBSERVATION {
+   	 	Y : {type is combinedError1, additive = RUV_ADD, proportional=RUV_PROP,  eps=EPS_Y, prediction= CC}
+	} # end OBSERVATION
+} # end of model object
+
+# Design object
+warfarin_PK_PRED_design = designObj{
+	DECLARED_VARIABLES{ 
+		D::dosingTarget
+		Y :: observation
+	  	SEX withCategories{female, male}
+	}
+	INTERVENTION{
+		admin1 : {type is bolus, input=D, amount=100, doseTime=[0]}
+	}
+
+	SAMPLING{
+	    window1 : {type is simple, sampleTime = [0.0001, 24, 36, 48, 72, 96, 120], outcome=Y }  
+          }
+    POPULATION{
+  		default : { type is template, covariate=[{ catCov=SEX, discreteRv ~ Bernoulli1(probability = 0.5) }] }
+  		arm2Pop : { type is template, covariate=[{ catCovValue=SEX.female }] }
+	}
+
+  STUDY_DESIGN{
+        arm1 : {
+              armSize=17,
+              interventionSequence={admin=admin1,start=0},
+              samplingSequence={sample=window1,start=0}}
+		arm2 : {
+              armSize=17,
+              interventionSequence={admin=admin1,start=0},
+              samplingSequence={sample=window1,start=0},
+			  population=arm2Pop
+			}
+     }
+}
+
+# EVALUATE task - implicit version with target SETTINGS
+warfarin_PK_PRED_taskEval = taskObj {
+	EVALUATE{ 
+		# Define tool specific settings in block
+		TARGET_SETTINGS(target = "PFIM"){ # here we explicit some elements of the task
+			set project = "warfarin_PK_COV",
+			output = "stdout_warfarin_PK_COV_eval.out",
+			outputFIM = "",			
+			option = 1,
+			subjectsInput = 1 # Note for Gareth: the converter should change this to subjects.input
+			}
+		}
+} # end of task object
+
+# EVALUATE MOG
+warfarin_PK_PRED_mog = mogObj {
+	OBJECTS{
+		warfarin_PK_PRED_design : { type is designObj }
+		warfarin_PK_PRED_mdl : { type is mdlObj }
+		warfarin_PK_PRED_par : { type is parObj }
+		warfarin_PK_PRED_taskEval : { type is taskObj }
+	}
+}

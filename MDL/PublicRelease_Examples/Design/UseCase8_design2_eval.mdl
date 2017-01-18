@@ -1,0 +1,182 @@
+# UseCase8 : Warfarin population pharmacokinetic model with between occasion variability (BOV))
+# Dosing regimen: single oral administration (at time 0)
+# Structural model : 1 compartment model (CL,V and TLAG)
+# Covariate model : Weight on V and CL 
+# Variability model: 
+#   - IIV on CL, V, ka and TLAG
+#   - BOV on CL and V
+#   - Correlation between CL and V between occasion random variables
+#   - Combined residual error model
+
+# PFIM modifications (EVALUATION)
+# 	Model as Closed-Form equation
+# removed correlation between CL and V random variables
+# removed Tlag from the model [Note: could keep Tlag without IIV and fixed]
+# removed covariate effects
+# model in ODE's instead of COMPARTMENT
+
+warfarin_PK_BOV_design = designObj{
+  DECLARED_VARIABLES{
+  	D :: dosingTarget
+  	Y :: observation
+  	OCC :: varLevel
+  }
+
+  INTERVENTION{
+ 	admin1 : {type is bolus, input=D, amount=100, doseTime=[0] }
+  }
+  SAMPLING{
+	window1 : {type is simple, sampleTime = [0.0001, 24, 36, 48, 72, 96, 120], outcome=Y }
+  }
+  STUDY_DESIGN{
+	arm1 : {
+		armSize=33,
+		interventionSequence=[{
+			admin=[admin1,admin1],
+			start=[0,120]
+		}],
+		samplingSequence=[{
+			sample=[window1,window1],
+			start=[0,120]
+		}],
+        occasionSequence={occasion=[1,2], level=OCC, start=[0, 120]}
+	}
+  }
+}
+
+warfarin_PK_BOV_par = parObj{
+   STRUCTURAL{
+      POP_CL:{value=0.1, lo=0.001} # L/h/70kg
+      POP_V:{value=8, lo=0.001} # L/70kg
+      POP_KA:{value=2, lo=0.001} # h-1
+      RUV_PROP:{value=0.1, lo=0}
+      RUV_ADD:{value=0.1, lo=0} # mg/L
+   }# end STRUCTURAL
+
+   VARIABILITY{
+      BSV_CL : {  value=0.1 }
+      BSV_V : { value=0.1 }
+      BOV_CL : { value=0.1}
+      BOV_V : { value=0.1}
+      BSV_KA : {value=0.1}
+
+   }# end VARIABILITY
+
+} # end of parameter object
+
+warfarin_PK_BOV_mdl = mdlObj{
+   IDV { T }
+
+   VARIABILITY_LEVELS(reference=ID){
+	ID : { level=3, type  is parameter }
+	OCC : { level=2, type  is parameter }
+   	DV : { level=1, type  is observation }
+   }
+
+   STRUCTURAL_PARAMETERS{
+      #THETA
+      POP_CL
+      POP_V
+      POP_KA
+      RUV_PROP
+      RUV_ADD
+   }# end STRUCTURAL_PARAMETERS
+
+   VARIABILITY_PARAMETERS{
+      #OMEGA
+      BSV_CL
+      BSV_V
+      BOV_CL
+      BOV_V
+      BSV_KA
+   }# end VARIABILITY_PARAMETERS
+
+   RANDOM_VARIABLE_DEFINITION(level=ID){
+      eta_BSV_CL~ Normal(mean=0, var=BSV_CL)
+      eta_BSV_V~ Normal(mean=0, var=BSV_V)
+	  eta_BSV_KA~ Normal(mean=0, var=BSV_KA)
+   }# end RANDOM_VARIABLE_DEFINITION
+
+   RANDOM_VARIABLE_DEFINITION(level=OCC){
+      eta_BOV_CL~ Normal(mean=0, var=BOV_CL)
+      eta_BOV_V~ Normal(mean=0, var=BOV_V)
+   }# end RANDOM_VARIABLE_DEFINITION
+
+   INDIVIDUAL_VARIABLES{
+      # Individual parameters
+		CL : {type is linear, trans is ln, pop = POP_CL, ranEff = [eta_BSV_CL, eta_BOV_CL ]}
+		V :  {type is linear, trans is ln, pop = POP_V, ranEff = [eta_BSV_V, eta_BOV_V] }
+	    KA : {type is linear, trans is ln, pop = POP_KA, ranEff = eta_BSV_KA }
+      }# end INDIVIDUAL_VARIABLES
+
+	
+	MODEL_PREDICTION {
+	    D::dosingVar # dosing variable
+	    CC =  (D/V) * KA/(KA-CL/V) * (exp(-CL/V * (T))- exp(-KA*(T)) )
+	} # end MODEL_PREDICTION
+
+	RANDOM_VARIABLE_DEFINITION(level=DV) {
+		EPS_Y ~ Normal(mean = 0, var = 1) 
+	} # end RANDOM_VARIABLE_DEFINITION 
+	
+	OBSERVATION {
+	    Y : {type is combinedError1, additive = RUV_ADD, proportional = RUV_PROP, eps = EPS_Y, prediction = CC }
+	} # end OBSERVATION
+
+} # end of model object
+
+
+# EVALUATE task - explicit version
+warfarin_PK_BOV_taskEval = taskObj{ # Here we define explicitly all options for optimisation with PFIM & FW algorithm
+        OPTIMISE {
+			set optAlgo is simplex,
+			fim = "P",
+			previousFim = "",
+			
+# Suggested names of common options (options that would make sense to different software) - Options for methods (what we want the software to compute, 
+# and the settings/options for these computations)
+        graphOnly = false,
+        typeIError = 0.05,
+        powerComparison = false,
+        nSubjectsComparison = false,
+        equivalenceRange = [ln(0.8),ln(1.25)],
+        powerEquivalence = false,
+        nSubjectsEquivalence = false,
+        typeIIError = 0.9,
+        
+# Graphical options (can be moved to SETTINGS if they only make sense to PFIM)     - Options for graphs   
+        graphLogical = true,
+        logLogical = false, 
+ 		namesDataX = ["Time"],
+ 		namesDataY = ["Concentration"],
+		graphInfA=[0],
+		graphSupA=[360] /#,
+        y.rangeA = NULL #/
+        
+#			FEATURES{
+#				sampleTime,
+#				numberTimes=4
+#			}
+        
+		# Define tool specific settings in block
+		TARGET_SETTINGS(target = "PFIM"){ # here we explicit all elements of the task
+			set project = "warfarin_PK_ODE_optimise",
+			output = "Stdout_warfarin_PK_ODE_optimise.out",
+			outputFIM = "",			
+			option = 1,
+			subjectsInput = 1,
+			covariateModel = false,
+			covariate_occModel = false
+			}
+		}
+}
+
+# EVALUATE MOG
+warfarin_PK_BOV_mog = mogObj {
+	OBJECTS{
+		warfarin_PK_BOV_design : { type is designObj }
+		warfarin_PK_BOV_mdl : { type is mdlObj }
+		warfarin_PK_BOV_par : { type is parObj }
+		warfarin_PK_BOV_taskEval : { type is taskObj }
+	}
+}

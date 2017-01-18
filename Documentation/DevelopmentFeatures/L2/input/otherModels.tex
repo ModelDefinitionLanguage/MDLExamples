@@ -1,0 +1,829 @@
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\chapter{Other observation models}
+\label{ch:otherModels}
+
+There is a large family of models which cannot be expressed as 
+\emph{structured} models. Here examples described in detail in 
+this chapter.
+
+\begin{itemize}
+\item 
+Non-standard combined log-transformed model
+\item 
+BQL residual model
+\item 
+Variability in residual error 
+\begin{itemize}
+\item 
+IIV in residual error magnitude 
+\item 
+IOV in residual error magnitude 
+\item 
+IRV of the residual error 
+\item 
+influence of regressors
+\end{itemize}
+\item 
+Joint residual error between multiple observations 
+\item 
+Two (or more) types of measurements error model 
+%\item 
+%Prior on residual error magnitude -- covered by PharmML 0.7.3 \marginpar{\textcolor{red}{ToDo}}
+%\item 
+%Mixture model for residual error \marginpar{\textcolor{red}{ToDo}}
+%\item 
+%Two (or more) types of observations model 
+%\item 
+%Serial correlation -- not supported right now
+\end{itemize}
+
+% left overs
+%1.3 & Combination of L2 data items with likelihood based inclusion of BLQ data & -- & $\star$  \\
+%1.6 & Residual error magnitude varying with derivatives of functions w.r.t. to time and parameters & -- & $\star$ \\
+%1.9 & Flexible errors-in-variables models & $\surd$ & $\star\star$ \\
+%1.10 & Transformation of residual error variables & -- & $\star\star\star$ \\
+
+
+%---------------------------------------------3.1-----------------------------------------------------------------------
+\section{Non-standard combined log-transformed model} 
+
+The following variance model was proposed 
+specifically to get the same error structure for log-transformed data as 
+in case of the 'combined constant and proportional model 2' for the 
+untransformed data (see
+\href{http://www.cognigencorp.com/nonmem/nm/99apr232002.html}{[NMusers] forum} discussion).
+
+\bigskip
+Model definition:
+\begin{eqnarray}
+&& \log(y_{ij}) = \log(f_{ij}) + \sqrt{a^2 + b^2/f_{ij}^2}\,\epsilon_{ij}; \quad \epsilon_{ij} \sim N(0,1); \quad \mathit{var}(y_{ij}) = a^2 + b^2/f_{ij}^2. \nonumber
+\end{eqnarray}
+
+\bigskip
+% NONMEM
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+NONMEM 
+\begin{lstlisting}[frame=single,language=NM]
+$ERROR
+ADD = THETA(1)
+PROP = THETA(2)
+Y=LOG(F)+SQRT(PROP**2+ADD**2/F**2)*EPS(1)
+$THETA 1; ADD
+	   1; PROP
+$SIGMA 1 FIX
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+
+
+% MLXTRAN
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+MLXTRAN
+\begin{lstlisting}[frame=single,language=MLX]
+[LONGITUDINAL]
+input = {..., a, b}
+
+EQUATION:
+F = ...
+G = sqrt(a^2 + b^2/F^2)
+
+DEFINITION:
+Y = {distribution=logNormal, prediction=F, sd=G}
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+
+
+%---------------------------------------------3.2-----------------------------------------------------------------------
+\section{BQL residual model} 
+
+This model was proposed by \cite{Beal:2001}: \emph{Logarithmically 
+transformed observations are used, and are modeled with the 
+homogeneous variance model, when the distributions of the untransformed 
+observations may be positively skewed, but their cv's seem to be constant. 
+However, there may be observations whose pharmacokinetic
+predictions become theoretically small, but both their central tendency
+and variance seem to remain constant and above certain levels
+(assuming that the assay is accurate, this can only happen when the kinetics
+are misspecified), in which case another useful model for the logarithmically
+transformed observations is given by the formula below where M is an extra 
+positively constrained parameter and $\epsilon_1$ and $\epsilon_2$ are random errors}.\\
+
+\smallskip
+Model definition:
+\bigskip
+\begin{eqnarray}
+\log(y_{ij}) =  \log(f_{ij}+M) + \frac{f_{ij}}{f_{ij}+M} \epsilon_{1,ij} + \frac{M}{f_{ij}+M} \epsilon_{2,ij}; \quad \epsilon_{1,ij}, \epsilon_{2,ij}\sim N(0,1); \quad \mathit{var}(y_{ij}) = \frac{f_{ij}^2 + M^2}{(f_{ij}+M)^2}\nonumber
+\end{eqnarray}
+for uncorrelated $\epsilon_{1,ij}$ and $\epsilon_{2,ij}$.
+\bigskip
+
+Alternative model definition:
+\begin{eqnarray}
+y_{ij} \sim \mathcal{N}\Big( \log(f_{ij}+M), \frac{f_{ij}^2 + M^2}{(f_{ij}+M)^2} \Big) \nonumber
+\end{eqnarray}
+
+\bigskip
+% NONMEM
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+NMTRAN
+(from \url{www.cognigencorp.com/nonmem/nm/99apr242002.html}):
+\begin{lstlisting}[frame=single,language=NM]
+$ERROR
+M=THETA(1)
+Y=LOG((F)+M)+(F*EPS(1))/(F+M)+(M*EPS(2))/(F+M)
+$THETA (0,0.1); M
+$SIGMA 1 FIX
+$SIGMA 1 FIX
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+
+
+
+% MLXTRAN
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+MLXTRAN
+\begin{lstlisting}[frame=single,language=MLX]
+[LONGITUDINAL]
+input = {...,M}
+
+EQUATION:
+F = ...
+FM = F + M
+G = sqrt(F^2 + M^2)/FM
+
+DEFINITION:
+Y = {distribution=logNormal, prediction = FM, sd=G}
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%---------------------------------------------------------------------------3.3.1---------------------------------------------------------------------------------------
+\section{Variability in residual error magnitude and parameters}
+\label{otherModels_model1}
+
+%---------------------------------------------------------------------------3.3.1---------------------------------------------------------------------------------------
+\subsection{IIV of the residual error magnitude -- \emph{aka} ETA-on-EPS}
+
+Model definition:\\
+Let $g_{ij}$ be the individual log-normally distributed standard deviation of the residual error
+\begin{eqnarray}
+&& g_{ij} = g_{typ,ij} \exp(\eta_i); \quad \eta_{i} \sim \mathcal{N}(0,\omega_g) \nonumber
+\end{eqnarray}
+with $g_{typ,ij}$ as the typical value, see section \ref{subsec:IIVonResidualError}, e.g.
+\begin{eqnarray}
+&& g_{typ,ij} = \sqrt{a^2 + b^2 f_{ij}^2} \nonumber
+\end{eqnarray}
+The Gaussian observation model for untransformed data reads then
+\begin{eqnarray}
+&& y_{ij} = f_{ij} + g_{ij} \epsilon_{ij}, \quad \epsilon_{ij} \sim \mathcal{N}(0,1); \quad var(y_{ij}) = g_{ij}^2	 \nonumber
+\end{eqnarray}
+
+
+\bigskip
+% NONMEM
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+NMTRAN
+\begin{lstlisting}[frame=single,language=NM]
+$ERROR
+ADD=THETA(1)
+PROP=THETA(2)
+IPRED = F
+G = SQRT(ADD**2+PROP**2*IPRED**2) * EXP(ETA(1))
+Y = IPRED + G*EPS(1)
+$THETA 1; ADD
+	 1; PROP
+$OMEGA 1
+$SIGMA 1 FIX
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+
+
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+MLXTRAN
+\begin{lstlisting}[frame=single,language=MLX]
+[INDIVIDUAL]
+input={..., omega_G}
+
+DEFINITION:
+eta_G = {distribution=normal, mean=0, sd=omega_G}
+
+[LONGITUDINAL]
+input={..., a, b, eta_G}
+
+EQUATION:
+F = ...
+G = sqrt(a^2 + b^2*F^2)*eta_G
+
+DEFINITION:
+Y = {distribution=normal, prediction=F, sd=G}
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+
+
+%---------------------------------------------------------------------------3.3.2---------------------------------------------------------------------------------------
+\subsection{IIV of the residual error parameters}
+Alternative IIV ....
+\label{subsec:altIIV}
+The models above illustrates modelling IIV of the residual error magnitude via the 
+standard deviation function, $G$. An alternative is to assign IIV to the parameters 
+of the residual error as shown in this example.
+
+\bigskip
+Model definition:
+\begin{eqnarray}
+&& a_i = a_{pop}\, \exp(\eta_{a,i}); \quad \eta_{a,i} \sim \mathcal{N}(0,\omega_a^2) \nonumber \\
+&& b_i = b_{pop}\, \exp(\eta_{b,i}); \quad \eta_{b,i} \sim \mathcal{N}(0,\omega_b^2) \nonumber \\
+&& g_{ij} = \sqrt{a_i^2 + b_i^2 f_{ij}^2} \nonumber \\
+&& y_{ij} = f_{ij} + g_{ij} \epsilon_{ij}; \quad \epsilon_{ij} \sim \mathcal{N}(0,1); \quad var(y_{ij}) = g^2_{ij}	\nonumber
+\end{eqnarray}
+
+\bigskip
+% NONMEM
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+NMTRAN
+\begin{lstlisting}[frame=single,language=NM]
+$ERROR
+ADD_pop = THETA(1)
+PROP_pop = THETA(2)
+ADD = ADD_pop*ETA(1)
+PROP = PROP_pop*ETA(2)
+G = SQRT(ADD**2 + PROP**2*F**2)
+Y = F + G*EPS(1)
+$THETA 1; ADD_pop
+	 1; PROP_pop
+$OMEGA 1
+$OMEGA 1
+$SIGMA 1 FIXED
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+
+
+% MLXTRAN
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+MLXTRAN
+\begin{lstlisting}[frame=single,language=MLX]
+[INDIVIDUAL]
+input = {..., a_pop, b_pop, omega_a, omega_b}
+
+DEFINITION:
+a = {distribution=logNormal, prediction=a_pop,sd=omega_a}
+b = {distribution=logNormal, prediction=b_pop,sd=omega_b}
+
+[LONGITUDINAL]
+input = {..., a, b}
+
+EQUATION:
+F = ...
+G = sqrt(a^2+b^2*F^2)
+
+DEFINITION
+Y = {distribution=normal, mean=F, sd=G}
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+
+
+%---------------------------------------------------------------------------3.3.3---------------------------------------------------------------------------------------
+\subsection{IOV of the residual error magnitude}
+
+Here the magnitude of the residual error varies with occasions, expressed with subscript $k$.
+
+\bigskip
+Model definition:
+
+\begin{eqnarray}
+&&g_{typ,ij} = \sqrt{a^2 + b^2 f_{ij}^2} \nonumber \\
+&&g_{ijk} = g_{typ,ij} \exp(\eta_{ik}) \nonumber 
+\end{eqnarray}
+with $\eta_{ik} \sim \mathcal{N}(0,\gamma^2)$. 
+
+\bigskip
+
+The Gaussian observation model for untransformed data reads then
+\begin{eqnarray}
+&& y_{ijk} \sim \mathcal{N}(f_{ij},g_{ijk}^2) \nonumber \\
+or && y_{ijk} = f_{ij} + g_{ijk} \epsilon_{ij}; \quad \epsilon_{ij} \sim \mathcal{N}(0,1); \quad var(y_{ijk}) = g^2_{ijk}	 \nonumber
+\end{eqnarray}
+
+\bigskip 
+% NONMEM
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+NMTRAN (with two occasions indicated with values 1 or 2 in the OCC column)
+\begin{lstlisting}[frame=single,language=NM]
+$ERROR
+ADD = THETA(1)
+PROP = THETA(2)
+IF(OCC.EQ.1) IOV = ETA(1)
+IF(OCC.EQ.2) IOV = ETA(2)
+G = SQRT(ADD**2+PROP**2*IPRED**2) * EXP(IOV)
+Y = IPRED + G*EPS(1)
+
+$THETA 1; ADD
+	 1; PROP
+$OMEGA BLOCK (1) 0.5
+$OMEGA BLOCK (1) SAME
+$SIGMA 1 FIX
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+
+% ORIGINAL CODE
+%$ERROR
+%; Example IOV on EPS
+%FLAG1 = 0
+%FLAG2 = 0
+%IF(FLAG.EQ.1) FLAG1 = 1
+%IF(FLAG.EQ.0) FLAG2 = 1
+%IOV = FLAG1*ETA(1) + FLAG2*ETA(2)
+%W = SQRT(THETA(1)**2+THETA(2)**2*IPRED*IPRED) * EXP(IOV)
+%Y = IPRED + W*EPS(1)
+%
+%$THETA 1
+%	   1
+%$OMEGA BLOCK (1) 0.5
+%$OMEGA BLOCK (1) SAME
+%$SIGMA 1 FIX
+ 
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm} 
+MLXTRAN \\
+%\textcolor{red}{version 1}\\
+ (with two occasions indicated with values 1 or 2 in the OCC column of type REG.  
+Note that this cannot change the connectivity of records in the dataset in terms of time values.)
+ 
+\begin{lstlisting}[frame=single,language=MLX]
+[INDIVIDUAL]
+input={..., omega}
+
+DEFINITION:
+eta_G1 = {distribution=normal, mean=0,sd=omega}
+eta_G2 = {distribution=normal, mean=0,sd=omega}
+
+[LONGITUDINAL]
+input={..., eta_G1, eta_G2, a, b}
+regressor={OCC}
+
+EQUATION:
+F = ...
+if OCC==1
+   IOV=eta_G1
+else
+   IOV=eta_G2
+end
+G = sqrt(a^2+b^2*F^2) * exp(IOV)
+
+DEFINITION:
+Y = {distribution=normal, mean=F, sd=G}
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+%\marginpar{\textcolor{red}{correct \\ use of \\ regressor? \\}}
+%
+%\marginpar{\textcolor{red}{is \\ version 1 \\ correct?\\ \\ \\}}
+
+
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm} 
+MLXTRAN \\
+%\textcolor{red}{version 2}
+\begin{lstlisting}[frame=single,language=MLX]
+[INDIVIDUAL]
+input={..., omega}
+
+DEFINITION:
+eta_G1 = {distribution=normal, mean=0,sd=omega}
+eta_G2 = {distribution=normal, mean=0,sd=omega}
+
+[LONGITUDINAL]
+input={..., eta_G1, eta_G2, a, b}
+regressor={OCC}
+
+EQUATION:
+F = ...
+G_typ = sqrt(a^2 + b^2*F^2)
+if OCC==1
+   G=G_typ*exp(eta_G1)
+else
+   G=G_typ*exp(eta_G2)
+end
+
+DEFINITION:
+Y = {distribution=normal, mean=F, sd=G}
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+
+%\marginpar{\textcolor{red}{is \\ version 2 \\ correct?}}
+ 
+\paragraph{Note} IOV of the residual error magnitude can also be encoded via variability 
+on its parameters, a and b, similarly to the model described in section \ref{subsec:altIIV}.
+
+%------------------------------------------------------------------------------------------------------------------------
+\subsection{IRV  of the residual error magnitude}
+The background information was given in section \ref{sec:variabStructure}. 
+Here we cite from the first paper dealing with this model in the PK context.
+
+\cite{Karlsson:1995rm} on inter-replicate variability: \emph{By taking
+replicate measurements at a single time point it is possible to some extent
+to differentiate between sources of error. Variability between replicates arises
+from assay error and the error introduced by sample handling from the
+point in the handling chain where the replication is made. We will assume
+replication is made at the point of sampling. The difference between predicted 
+and observed concentrations at the $j^{th}$ time point now has two components, 
+a consistent difference, $\epsilon_{ij}$, between all replicates
+and the prediction, and replicate-specific differences, $\epsilon_{ijk}$}.
+
+%\begin{eqnarray}
+%&&FLG =  \left\{ \begin{array}{rcll}  1 & \mbox{for}  & \mbox{TYPE}  = 2  \quad &; Replicate\;1\\
+%0  & \mbox{for} & else  &; Replicate\;2 \nonumber
+%\end{array}\right.
+%\end{eqnarray}
+%
+%\begin{eqnarray}
+%&&y_{ij} = f_{ij} + g\,\epsilon_{ij} \quad \mbox{with} \quad
+%g = \sqrt{\sigma_1^2 + (1-FLG)^2\, \sigma_2^2 + FLG^2\, \sigma_3^2} \nonumber
+%\end{eqnarray}
+%
+%\begin{eqnarray}
+%&& y_{ij} = \left\{ \begin{array}{rcl}  f_{ij} + \epsilon_{1,ij} + \epsilon_{2,ij} & \mbox{for}  & \mbox{Replicate} = 1 \\
+%f_{ij} + \epsilon_{1,ij}  + \epsilon_{3,ij}    & \mbox{for} & else  
+%\end{array}\right. \quad \mbox{with} \quad \epsilon_{1,ij} \sim \mathcal{N}(0,\sigma_1^2), \quad \epsilon_{2,ij},\;\epsilon_{3,ij} \sim \mathcal{N}(0,\sigma^2) \nonumber 
+%%&& \mbox{and} \quad g = \sqrt{\sigma_1^2 + \sigma^2} \nonumber
+%\end{eqnarray}
+
+\bigskip
+Model definition:
+
+\begin{eqnarray}
+y_{ijk} = f_{ij} + \epsilon_{ij} + \epsilon_{ijk}; \quad 
+\epsilon_{ij} \sim \mathcal{N}(0,\sigma_1^2), \; \epsilon_{ijk} \sim \mathcal{N}(0,\sigma_2^2); \quad var(y_{ijk}) = \sigma^2_{1} + \sigma^2_{2} \nonumber
+\end{eqnarray}	
+
+\bigskip
+%% NONMEM
+%\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+%Original NMTRAN code:
+%\begin{lstlisting}[frame=single,language=NM]
+%$ERROR
+%FLG = 0	; Replicate 1
+%IF (TYPE.EQ.2) FLG = 1 ; Replicate 2
+%Y = IPRED + EPS(1) + (1-FLG)*EPS(2) + FLG * EPS(3)
+%$SIGMA 0.1 ; "Shared" error
+%$SIGMA BLOCK (1) 0.05
+%$SIGMA BLOCK (1) SAME
+%\end{lstlisting}   
+%\end{minipage}\end{lrbox}
+%\usebox\lstbox
+
+% NONMEM
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+NMTRAN (with two replicates)
+\begin{lstlisting}[frame=single,language=NM]
+$ERROR
+IF (REP.EQ.1) IRV = EPS(2)
+IF (REP.EQ.2) IRV = EPS(3)
+Y = IPRED + EPS(1) + IRV
+$SIGMA 0.1 ; "Shared" error
+$SIGMA BLOCK (1) 0.05
+$SIGMA BLOCK (1) SAME
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+
+% MLXTRAN
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+MLXTRAN (with two replicates, indicated by different values in a column of type YTYPE)
+\begin{lstlisting}[frame=single,language=MLX]
+[LONGITUDINAL]
+input = {..., a1, a2}
+
+EQUATION:
+F = ...
+G = sqrt(a1^2 + a2^2)
+
+DEFINITION:
+Y1 = {distribution=normal, prediction=F, sd=G}
+Y2 = {distribution=normal, prediction=F, sd=G}
+
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+
+\paragraph{Note} IRV of the residual error magnitude can also be encoded via variability 
+on its parameters, a1 and a2, similar to model described in section \ref{subsec:altIIV}.
+
+
+%---------------------------------------------------------------------------3.4---------------------------------------------------------------------------------------
+\subsection{Residual error magnitude varying with time-varying covariates/regressors}
+\label{otherModels_model5}
+
+Model definition example:
+
+\begin{eqnarray}
+&&MAT = 1/KA; \quad \text{mean absorption time} \nonumber \\
+&&FACT = \left\{ \begin{array}{rcl}  1 & \mbox{if} \quad time > MAT \\
+c & \mbox{otherwise}   
+\end{array}\right. \nonumber \\
+&&g = \sqrt{a^2 + b^2 f^2} \times FACT \nonumber
+\end{eqnarray}
+
+\bigskip
+% NONMEM
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+NMTRAN
+\begin{lstlisting}[frame=single,language=NM]
+$ERROR
+PROP = THETA(1)
+ADD = THETA(2)
+FACT = c
+MAT = 1 / KA 
+IF(TIME.GT.MAT) FACT = 1
+W = SQRT(ADD**2+PROP**2*IPRED*IPRED)*FACT
+Y = IPRED + W*EPS(1)
+$THETA 1; PROP
+	   1; ADD
+$SIGMA 1 FIX
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+
+
+% MLXTRAN
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+MLXTRAN
+\begin{lstlisting}[frame=single,language=MLX]
+[LONGITUDINAL]
+input = {..., KA, a, b, c}
+
+EQUATION:
+MAT = 1/KA
+if t > MAT
+	FACT = 1
+else
+	FACT = c
+end
+F = ...
+G = sqrt(a^2 + b^2*F^2)*FACT
+
+DEFINITION:
+Y = {distribution=normal, prediction=F, sd=G}
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%-2-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Joint residual error between multiple observations}
+\label{otherModels_model2}
+
+This models applies to joint  parent/metabolite measurements, discussed here 
+in the specific case of constant error model for both observations\\
+\bigskip
+Model definition:
+\begin{eqnarray}
+&& y_{ij} = \left\{ \begin{array}{rcl}  f_{1,ij} + \epsilon_{1,ij} & \mbox{if}  & \mbox{TYPE}  = 1 \\
+f_{2,ij} + \epsilon_{2,ij}    & \mbox{if} & \mbox{TYPE}  = 0  
+\end{array}\right. \quad \mbox{with} \quad 
+\bigg[ \begin{array}{l}  \epsilon_{1,ij} \\
+\epsilon_{2,ij}   \nonumber
+\end{array} \bigg]
+\in \mathcal{N} 
+\Bigg( 0, \bigg[ \begin{array}{ll} \sigma_1^2 & \sigma_{12} \\ \sigma_{12} & \sigma_2^2 \end{array}  \bigg] \Bigg)
+\end{eqnarray}
+where TYPE is the observation type.
+
+\bigskip
+
+% NONMEM
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+NMTRAN
+\begin{lstlisting}[frame=single,language=NM]
+$ERROR
+IF (TYPE.EQ.1) THEN
+Y = IPRED1 + EPS(1) ; Observation type 1
+ELSE
+Y = IPRED2 + EPS(2) ; Observation type 2
+ENDIF
+$SIGMA BLOCK(2)
+0.1
+0.05 0.1
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+
+% MLXTRAN
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+MLXTRAN (with observation types indicated by different values in a column of type YTYPE)
+\begin{lstlisting}[frame=single,language=MLX]
+[LONGITUDINAL]
+input = {..., a1, a2, r}
+
+EQUATION:
+F1 = ...
+F2 = ...
+G1 = a1
+G2 = a2
+
+DEFINITION:
+Y1 = {distribution=normal, prediction=F1, sd=G1}
+Y2 = {distribution=normal, prediction=F2, sd=G2}
+correlation = {block={Y1,Y2} , corrcoef=r}
+
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+
+
+
+%%-------------------------------------------------3.5.2-----------------------------------------------------------------------
+%\subsection{case 2}
+%
+%\begin{eqnarray}
+%&&TT = \theta_5 \nonumber \\
+%&&FACT = \left\{ \begin{array}{rcl}  1 & \mbox{for}  & time > TT \\
+%\theta_3  & \mbox{for} & else  \nonumber
+%\end{array}\right.
+%\end{eqnarray}
+%
+%\begin{eqnarray}
+%&&g = \sqrt{\theta_2^2 + \theta_1^2 f^2} \times FACT \nonumber
+%\end{eqnarray}
+%
+%\bigskip
+%% NONMEM
+%\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+%Original NMTRAN code (extended by \$SIGMA and \$THETA):
+%\begin{lstlisting}[frame=single,language=NM]
+%$ERROR
+%PROP = THETA(1)
+%ADD = THETA(2)
+%FACT = THETA(3)
+%TT = THETA(4) ; Transition time
+%IF(TIME.GT.TT) FACT = 1
+%W = SQRT(ADD**2+PROP**2*IPRED*IPRED)*FACT
+%Y = IPRED + W*EPS(1)
+%$THETA 1; PROP
+%	   1; ADD
+%	   2; FACT
+%	   10; TT
+%$SIGMA 1 FIX
+%\end{lstlisting}   
+%\end{minipage}\end{lrbox}
+%\usebox\lstbox
+%
+%% MLXTRAN
+%\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+%MLXTRAN
+%\begin{lstlisting}[frame=single,language=MLX]
+%[LONGITUDINAL]
+%input = {S0, k, THETA1, THETA2, THETA3, TT}
+%
+%EQUATION:
+%if t > TT
+%	FACT = 1
+%else
+%	FACT = THETA3
+%end
+%F = S0*exp(-k*t)
+%G = sqrt(THETA2^2 + THETA1^2*F^2)*FACT
+%
+%DEFINITION
+%Y = {distribution=normal, prediction=F, sd=G}
+%
+%\end{lstlisting}   
+%\end{minipage}\end{lrbox}
+%\usebox\lstbox
+
+
+%%---------------------------------------------3.5.3---------------------------------------------------------------------------
+%\subsection{Case 2 -- covariate/time dependence}
+%This model example, provided by Roberto, assumes a dependence between $g$ and both the regression variable, TIME, and a covariate, here \textit{subject} denoted as ID.
+%
+%\bigskip
+%
+%Model formulation: 
+%\begin{eqnarray}
+%y_{ij} = \left\{ \begin{array}{rcl}  f_{ij} + \epsilon_{1,ij}  & \mbox{for} & \mbox{TIME } \le 10 \;\;\&\;\; ID == 1 \\
+%f_{ij} + \epsilon_{2,ij}  & \mbox{for} & \text{TIME} > 10 \;\;\&\;\; ID == 1 \nonumber \\
+%\cdots \nonumber
+%\end{array}\right\} \;\; \text{with} \;\;
+%\mathit{var}(y_{ij}) = \left\{ \begin{array}{rcl}  \sigma_{1}^2  & \mbox{for} & \mbox{TIME} \le 10 \;\;\&\;\; ID == 1 \\
+%\sigma_{2}^2  & \mbox{for} & \mbox{TIME} > 10 \;\;\&\;\; ID == 1  \nonumber \\
+%\dots && \nonumber
+%\end{array}\right.
+%\end{eqnarray}
+%for $\epsilon_{1,ij} \sim N(0,\sigma_1^2),\, \epsilon_{2,ij} \sim N(0,\sigma_2^2), \cdots$
+%
+%\bigskip
+%% NONMEM
+%\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+%NONMEM
+%\begin{lstlisting}[frame=single,language=NM]
+%$ERROR 
+%IPRED = F
+%
+%IF (TIME.LE.10.AND.ID.EQ.1) 
+%Y = IPRED + EPS(1) 
+%ENDIF
+%
+%IF (TIME.GT.10.AND.ID.EQ.1) 
+%Y = IPRED + EPS(2)
+%ENDIF
+%...
+%$SIGMA 1
+%$SIGMA 1
+%...
+%\end{lstlisting}   
+%\end{minipage}\end{lrbox}
+%\usebox\lstbox
+%
+%
+%% MLXTRAN
+%\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+%MLXTRAN
+%\begin{lstlisting}[frame=single,language=MLX]
+%[LONGITUDINAL]
+%input = {S, k, a1, a2, ...}
+%
+%EQUATION:
+%F = S*exp(-k*t)
+%if (TIME <= 10 && ID == 1)
+%	G = a1
+%elseif (TIME > 10 && ID == 1)
+%	G = a2
+%elseif 
+%	...
+%end
+%DEFINITION:
+%Y = {distribution=normal, mean=F, sd=G}
+%\end{lstlisting}   
+%\end{minipage}\end{lrbox}
+%\usebox\lstbox
+
+
+%------------------------------------------------2.1.8-----------------------------------------------------------------------
+\section{Two (or more) types of measurements error model}
+\label{model8}
+This model assumes that e.g. the drug concentration, is measured using  different assays. 
+This is expressed in the following example by the categorical variable ASY taking values 
+1 or 0, for the first or second assay respectively (\cite{NONMEM:2006aa}).  \\\	
+\bigskip
+Model definition:
+\begin{eqnarray}
+&& y_{ij} = f_{ij} + \text{ASY}_j\epsilon_{1,ij} + (1-\text{ASY}_j) \epsilon_{2,ij}; \quad \epsilon_{1,ij} \sim N(0,\sigma_1^2); \quad \epsilon_{2,ij} \sim N(0,\sigma_2^2); \nonumber
+\end{eqnarray}
+Alternative formulation:
+\begin{eqnarray}
+&& y_{ij} = \left\{ \begin{array}{rcl}  f_{ij} + \epsilon_{1,ij}  & \mbox{if} & \text{ASY}_j  = 1 \\
+f_{ij} + \epsilon_{2,ij}  & \mbox{if} & \text{ASY}_j  = 0 \nonumber
+\end{array}\right.;  \quad \epsilon_{1,ij} \sim N(0,\sigma_1^2); \quad \epsilon_{2,ij} \sim N(0,\sigma_2^2); 
+\end{eqnarray}
+In both formulations:
+\begin{eqnarray}
+&& \mathit{var}(y_{ij}) = \left\{ \begin{array}{rcl}  \sigma_{1}^2  & \mbox{if} & \text{ASY}_j  = 1 \\
+\sigma_{2}^2  & \mbox{if} & \text{ASY}_j  = 0 \nonumber
+\end{array}\right.
+\end{eqnarray}
+
+\bigskip
+% NONMEM
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+NMTRAN
+\begin{lstlisting}[frame=single,language=NM]
+$ERROR
+IPRED=F
+IF (ASY.EQ.1) Y = IPRED + EPS(1)
+IF (ASY.EQ.0) Y = IPRED + EPS(2)
+$SIGMA 1
+$SIGMA 1
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+
+
+% MLXTRAN
+\begin{lrbox}{\lstbox}\begin{minipage}{16cm}
+MLXTRAN (with YTYPE for the column ASY)
+\begin{lstlisting}[frame=single,language=MLX]
+[LONGITUDINAL]
+input = {a1, a2, ...}
+
+EQUATION:
+F = ... 
+G1 = a1
+G2 = a2
+
+DEFINITION:
+Y1 = {distribution=normal, mean=F, sd=G1}
+Y2 = {distribution=normal, mean=F, sd=G2}
+\end{lstlisting}   
+\end{minipage}\end{lrbox}
+\usebox\lstbox
+
+

@@ -1,0 +1,102 @@
+Hierarchical_model_dat = dataObj {
+	DECLARED_VARIABLES{ D::dosingVar Y::observation }
+
+	DATA_INPUT_VARIABLES {
+		POP : {use is varLevel}
+		ID : { use is id }
+		TIME : { use is idv }
+		WT : { use is covariate }
+		AMT : { use is amt, variable = D }
+		DVID : { use is dvid}
+		DV : { use is dv, variable = Y }
+		MDV : { use is mdv }
+		logtWT:{ use is covariate }  
+	} # end DATA_INPUT_VARIABLES
+	
+	SOURCE {
+	srcfile : {file = "warfarin_conc.csv", 
+            inputFormat is nonmemFormat }
+	} # end SOURCE
+} # end data object
+
+Hierarchical_model_par = parObj {
+	# By default a parameter is to be estimated if fix is omitted
+ 	STRUCTURAL {
+ 		ws : {value = 70, fix=true}
+ 		Vs : {value = 10, fix=true}
+ 		k : {value = 0.2, fix=true}
+ 		} # end STRUCTURAL
+	VARIABILITY {
+ 		gw : {value = 10, type is sd, fix=true}
+ 		gV : {value = 0.1, type is sd, fix=true}
+ 		omega_w : {value = 12, type is sd, fix=true}
+		omega_V : {value = 0.15, type is sd, fix=true}
+ 		b : {value = 0.2, fix=true}
+ 		} # end VARIABILITY
+} # end of parameter object 
+
+Hierarchical_model_mdl = mdlObj {
+	IDV{ T }
+
+	VARIABILITY_LEVELS{
+		POP : { level=3, type is parameter }
+		ID : { level=2, type is parameter }
+		DV : { level=1, type is observation }
+	} 
+
+	COVARIATES{
+		WT ~ Normal(mean=w_pop, sd=omega_w)
+	}
+
+	STRUCTURAL_PARAMETERS {ws Vs k BETA_WT=1} # end STRUCTURAL_PARAMETERS
+	
+	VARIABILITY_PARAMETERS { gV gw omega_w omega_V b} # end VARIABILITY_PARAMETERS 
+
+	RANDOM_VARIABLE_DEFINITION(level=POP){   
+		w_pop ~ Normal(mean = ws, sd = gw)
+		V_pop ~ Normal(mean = Vs, sd = gV)
+	} # end RANDOM_VARIABLE_DEFINITION 
+
+	RANDOM_VARIABLE_DEFINITION(level=ID) {
+		ETA_BSV_V ~ Normal(mean = 0, sd = omega_V)
+	} # end RANDOM_VARIABLE_DEFINITION 
+		
+	POPULATION_PARAMETERS{
+		:: {type is continuous, variable = w_pop}		
+		:: {type is continuous, variable=V_pop}
+	}
+				
+	INDIVIDUAL_VARIABLES { 
+		V : {type is linear, trans is ln, pop=V_pop, fixEff={coeff=BETA_WT, cov=WT}, ranEff=ETA_BSV_V}
+	} # end INDIVIDUAL_VARIABLES
+
+	MODEL_PREDICTION {
+		D
+		f = D/V * exp(-k*T)
+	} # end MODEL_PREDICTION
+	
+	RANDOM_VARIABLE_DEFINITION(level=DV){
+	    EPS_Y ~ Normal(mean = 0, var = 1) # This maps the standard error model in PharmML. The error model is predefined.
+	}
+
+	OBSERVATION {
+		Y : {type is proportionalError, prediction=f, proportional=b, eps=EPS_Y }
+		} # end OBSERVATION
+} # end of model object
+
+Hierarchical_model_task = taskObj {
+	ESTIMATE {
+	    set algo is saem
+	} #end ESTIMATE sub block
+} # end of task object
+
+#Modelling object group
+
+Hierarchical_Model_mog = mogObj {
+	OBJECTS{
+		Hierarchical_model_dat : { type is dataObj }
+		Hierarchical_model_mdl : { type is mdlObj }
+		Hierarchical_model_par : { type is parObj }
+		Hierarchical_model_task : { type is taskObj }
+	}
+}

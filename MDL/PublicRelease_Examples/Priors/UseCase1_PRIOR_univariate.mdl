@@ -1,0 +1,184 @@
+# UseCase1 : Warfarin population pharmacokinetic model using ordinary differential equations (ODE)
+# PRIORS : Uses univariate distributions for PRIORS.
+# Dosing regimen: single oral administration (at time 0)
+# Structural model : 1 compartment model (CL,V and TLAG)
+# Covariate model : Weight on V and CL 
+# Variability model: 
+#   - IIV on CL, V, ka and TLAG
+#   - Correlation between CL and V random variables
+#   - Combined residual error model
+
+  
+warfarin_PK_ODE_dat = dataObj {
+	DECLARED_VARIABLES{GUT::dosingTarget Y::observation}
+
+	DATA_INPUT_VARIABLES {
+		ID : { use is id }
+		TIME : { use is idv }
+		WT : { use is covariate }
+		AMT : { use is amt, variable = GUT }
+		DVID : { use is dvid}
+		DV : { use is dv, variable = Y }
+		MDV : { use is mdv }
+		logtWT:{ use is covariate }  
+	} # end DATA_INPUT_VARIABLES
+	
+	SOURCE {
+	    srcfile : {file = "warfarin_conc.csv", 
+            inputFormat is nonmemFormat } 
+	} # end SOURCE
+} # end data object
+
+warfarin_UC1_prior = priorObj{
+ PRIOR_PARAMETERS{
+        # prior on "THETA"		
+       MU_POP_CL    = 0.2
+	   MU_POP_V     = 10
+	   MU_POP_KA    = 0.3
+	   MU_POP_TLAG  = 0.75
+       VAR_POP_CL   = 0.0001
+       VAR_POP_V    = 0.01
+       VAR_POP_KA   = 0.0001
+       VAR_POP_TLAG = 0.001
+
+	   # prior on "SIGMA"
+	   a_POP_RUV_ADD = 1.1
+	   b_POP_RUV_ADD = 0.01
+	   a_POP_RUV_PROP = 1.1
+	   b_POP_RUV_PROP = 0.01
+   } # end PRIOR_PARAMETERS
+
+   PRIOR_VARIABLE_DEFINITION{
+
+	   # prior on "THETA"     
+	   lMU_POP_CL = ln(MU_POP_CL)		
+	   lPOP_CL ~ Normal(mean=lMU_POP_CL, var=VAR_POP_CL)
+	   POP_CL = exp(lPOP_V)	
+
+	   lMU_POP_V = ln(MU_POP_V)		
+	   lPOP_V ~ Normal(mean=lMU_POP_V, var=VAR_POP_V)
+	   POP_V = exp(lPOP_V)	
+	   
+	   lMU_POP_KA = ln(MU_POP_KA)
+	   lPOP_KA ~ Normal(mean=lMU_POP_KA, var=VAR_POP_KA)
+	   POP_KA = exp(lPOP_KA)
+
+	   lMU_POP_TLAG = ln(MU_POP_TLAG)
+	   lPOP_TLAG ~ Normal(mean=lMU_POP_TLAG, var=VAR_POP_TLAG)
+	   POP_TLAG = exp(lPOP_TLAG)
+	   
+	   # priors on "OMEGA"
+	   TAU_CL ~ Gamma2(shape=1, rate=0.01)
+	   PPV_CL = sqrt(1/TAU_CL)
+
+	   TAU_V ~ Gamma2(shape=1, rate=0.01)
+	   PPV_V = sqrt(1/TAU_V)
+	   
+	   TAU_KA ~ Gamma2(shape=1, rate=0.01)
+	   PPV_KA = sqrt(1/TAU_KA)
+
+	   # Assume no prior knowledge of COV_CL_V
+	   CORR_CL_V ~ Uniform1(minimum=-1, maximum=1)
+	
+	   # prior on "SIGMA"  
+	   invRUV_ADD ~ Gamma2(shape=a_POP_RUV_ADD, rate=b_POP_RUV_ADD)
+	   invRUV_PROP ~ Gamma2(shape=a_POP_RUV_PROP, rate=b_POP_RUV_PROP)
+	   
+	   RUV_ADD = sqrt(1/invRUV_ADD)
+	   RUV_PROP = sqrt(1/invRUV_PROP)
+
+	# These parameters pass fixed values through to the Model Object
+	# They can be seen as "point mass" prior distributions
+		PPV_TLAG = 0.01
+		BETA_CL_WT = 0.75
+		BETA_V_WT = 1
+    } # end PRIOR_VARIABLE_DEFINITION
+}
+
+warfarin_PK_ODE_mdl = mdlObj {
+	IDV{ T }
+
+	COVARIATES{
+		logtWT
+	}
+
+	VARIABILITY_LEVELS{
+		ID : { level=2, type is parameter }
+		DV : { level=1, type is observation }
+	} 
+
+	STRUCTURAL_PARAMETERS { 
+		POP_CL
+		POP_V
+		POP_KA
+		POP_TLAG
+		BETA_CL_WT
+		BETA_V_WT
+		RUV_PROP
+		RUV_ADD
+	} # end STRUCTURAL_PARAMETERS
+	
+	VARIABILITY_PARAMETERS {
+		PPV_CL
+		PPV_V
+		CORR_CL_V
+		PPV_KA
+		PPV_TLAG
+	} # end VARIABILITY_PARAMETERS 
+	
+	RANDOM_VARIABLE_DEFINITION(level=ID) {
+		ETA_CL ~ Normal(mean = 0, sd = PPV_CL)
+		ETA_V ~ Normal(mean = 0, sd = PPV_V)
+		::{type is correlation, rv1=ETA_CL, rv2=ETA_V, value=CORR_CL_V}
+		ETA_KA ~ Normal(mean = 0, sd = PPV_KA)
+		ETA_TLAG ~ Normal(mean = 0, sd = PPV_TLAG)
+	} # end RANDOM_VARIABLE_DEFINITION 
+
+	INDIVIDUAL_VARIABLES { 
+		CL : {type is linear, trans is ln, pop = POP_CL, fixEff = {coeff=BETA_CL_WT, cov=logtWT} , ranEff = ETA_CL}
+		V :  {type is linear, trans is ln, pop = POP_V, fixEff = {coeff=BETA_V_WT, cov=logtWT} , ranEff = ETA_V }
+	    KA : {type is linear, trans is ln, pop = POP_KA, ranEff = ETA_KA }
+	    TLAG : {type is linear, trans is ln, pop = POP_TLAG, ranEff = ETA_TLAG }
+	} # end INDIVIDUAL_VARIABLES
+
+	MODEL_PREDICTION {
+		DEQ{
+			RATEIN = if(T >= TLAG) then GUT * KA  
+					 else 0
+			GUT : { deriv =(- RATEIN), init = 0, x0 = 0 }
+			CENTRAL : { deriv =(RATEIN - CL * CENTRAL / V), init = 0, x0 = 0 } 
+		}
+	    CC = CENTRAL / V 
+	} # end MODEL_PREDICTION
+	
+	RANDOM_VARIABLE_DEFINITION(level=DV){
+	    EPS_Y ~ Normal(mean = 0, var = 1) # This maps the standard error model in PharmML. The error model is predefined.
+	}
+
+	OBSERVATION {
+	    Y : {type is combinedError1, additive = RUV_ADD, proportional = RUV_PROP, eps = EPS_Y, prediction = CC}
+	    	} # end OBSERVATION
+} # end of model object
+
+BUGS_task = taskObj{
+	ESTIMATE{
+		set algo is mcmc
+			TARGET_SETTINGS(target="BUGS"){
+			set nchains = 1,
+			burnin = 1000,
+			niter = 5000,
+			parameters = "V,CL,KA,TLAG",
+			odesolver="LSODA", 
+			winbugsgui ="false"
+	}
+	}
+}
+
+warfarin_PK_ODE_mog = mogObj {
+	OBJECTS{
+		warfarin_PK_ODE_dat : { type is dataObj }
+		warfarin_PK_ODE_mdl : { type is mdlObj }
+		warfarin_UC1_prior : { type is priorObj }
+		BUGS_task : { type is taskObj }
+	}
+}

@@ -1,0 +1,175 @@
+# UseCase3 : Simultaneous PKPD. PK as COMPARTMENTS, PD as ODEs
+# Population pharmacokinetic and pharmacodynamic model to describe warfarin and PCA response
+# Dosing regimen: single oral administration
+# Structural model 
+#   - 1 compartment model (CL,V and TLAG)
+#   - Indirect response model + inhibitory EMAX model on synthesis
+# Covariate model : Weight on V and CL 
+# Variability model: 
+#   - IIV on CL, V, ka, TLAG,PCA0, C50 and TEQ
+#   - Correlation between CL and V random variables
+#   - PK: Combined residual error model 
+#   - PD: Additive residual error model
+
+warfarin_PKPD_turnover_dat = dataObj{
+     DECLARED_VARIABLES{CP_obs::observation PCA_obs::observation INPUT_KA::dosingTarget }
+
+     DATA_INPUT_VARIABLES{
+      ID : 	 { use is id }
+      TIME : { use is idv }
+      WT : 	 { use is covariate }
+      AGE :  { use is covariate }
+      SEX :  { use is catCov withCategories{female when 0, male when 1} }
+      AMT :  { use is amt, variable = INPUT_KA }
+      DVID : { use is dvid }
+      DV :   { use is dv, define={1 in DVID as CP_obs, 2 in DVID as PCA_obs} }
+      MDV :  { use is mdv }
+   }# end DATA_INPUT_VARIABLES
+
+   SOURCE{
+      srcfile : {file="warfarin_conc_pca.csv", 
+      			 inputFormat is nonmemFormat }
+   }# end SOURCE
+} # end data object
+
+warfarin_PKPD_turnover_par = parObj{
+   STRUCTURAL{
+      POP_CL : {value=0.1,lo=0.01,hi=1} # L/h/70kg
+      POP_V : {value=8,lo=0.01,hi=20} # L/70kg
+      POP_KA : {value=0.362,lo=0.01,hi=24} # h
+      POP_TLAG : {value=1,lo=0.01,hi=24} # h
+      POP_PCA0 : {value=96.7,lo=0.01,hi=200}
+      POP_EMAX : {value=1, lo=0, fix=true}
+      POP_C50 : {value=1.2,lo=0.01,hi=10}
+      POP_TEQ : {value=12.9,lo=0.01,hi=100}
+	  BETA_CL_WT : { value = 0.75, fix = true }
+	  BETA_V_WT : { value = 1, fix = true }
+   }# end STRUCTURAL
+
+   VARIABILITY{
+	  PPV_CL : { value = 0.1 }
+	  PPV_V : { value = 0.1 }
+	  PPV_KA : { value = 0.1 }
+	  PPV_TLAG : { value = 0.1, fix=true }
+	  CORR_CL_V : { value = 0.01 }
+      RUV_PROP : {value=0.05, lo=0 }
+      RUV_ADD : {value=0.3, lo=0.0001 } # mg/L
+
+      PPV_PCA0 : { value=0.1 }
+      PPV_EMAX : { value=0, fix=true }
+      PPV_C50 : { value=0.1 }
+      PPV_TEQ : { value=0.1 }
+      RUV_FX :  { value=4, lo=0 }
+   }# end VARIABILITY
+
+} # end of parameter object
+
+warfarin_PKPD_turnover_mdl = mdlObj{
+	IDV { T }
+
+	VARIABILITY_LEVELS{
+		ID : { level=2, type is parameter }
+		DV : { level=1, type is observation }	
+	}
+
+	COVARIATES{
+		WT
+		logtWT = ln(WT/70)
+	}
+	
+# The STRUCTURAL_PARAMETERS Block defines the structural model parameters.
+   STRUCTURAL_PARAMETERS{
+      POP_CL
+      POP_V
+      POP_KA
+      POP_TLAG
+      POP_PCA0
+      POP_EMAX
+      POP_C50
+      POP_TEQ
+      BETA_CL_WT
+      BETA_V_WT
+    }# end STRUCTURAL_PARAMETERS
+
+   VARIABILITY_PARAMETERS{
+      PPV_CL
+      PPV_V
+      CORR_CL_V
+      PPV_KA
+      PPV_TLAG
+      RUV_PROP
+      RUV_ADD
+
+      PPV_PCA0
+      PPV_EMAX
+      PPV_C50
+      PPV_TEQ
+      RUV_FX
+   }# end VARIABILITY_PARAMETERS
+
+   RANDOM_VARIABLE_DEFINITION(level=ID){
+      ETA_CL ~ Normal( mean=0, sd=PPV_CL) 
+      ETA_V ~ Normal( mean=0, sd=PPV_V)
+      :: {type is correlation, rv1=ETA_CL, rv2=ETA_V, value=CORR_CL_V}
+      ETA_KA ~ Normal( mean=0, sd=PPV_KA)
+      ETA_TLAG ~ Normal( mean=0, sd=PPV_TLAG)
+      ETA_PCA0 ~ Normal( mean=0, sd=PPV_PCA0)
+      ETA_EMAX ~ Normal( mean=0, sd=PPV_EMAX)
+      ETA_C50 ~ Normal( mean=0, sd=PPV_C50)
+      ETA_TEQ ~ Normal( mean=0, sd=PPV_TEQ)
+   }# end RANDOM_VARIABLE_DEFINITION
+
+   INDIVIDUAL_VARIABLES{
+	    CL : {type is linear, trans is ln, pop = POP_CL, fixEff = {coeff=BETA_CL_WT, cov=logtWT} , ranEff = ETA_CL }
+	    V : {type is linear, trans is ln, pop = POP_V, fixEff = {coeff=BETA_V_WT, cov=logtWT} , ranEff = ETA_V }
+	    KA : {type is linear, trans is ln, pop = POP_KA, ranEff = ETA_KA }
+	    TLAG : {type is linear, trans is ln, pop = POP_TLAG, ranEff = ETA_TLAG }
+
+	  PCA0 : {type is linear, trans is ln, pop = POP_PCA0, ranEff = ETA_PCA0 }
+	  EMAX : {type is linear, pop = POP_EMAX, ranEff = ETA_EMAX }
+	  C50 : {type is linear, trans is ln, pop = POP_C50, ranEff = ETA_C50 }
+	  TEQ : {type is linear, trans is ln, pop = POP_TEQ, ranEff = ETA_TEQ }   
+   }# end INDIVIDUAL_VARIABLES
+
+   MODEL_PREDICTION{
+	COMPARTMENT {
+			INPUT_KA      : {type is depot, to=CENTRAL, ka=KA, tlag=TLAG}
+			CENTRAL       : {type is compartment}
+                     	 :: {type is elimination, from=CENTRAL, v=V, cl=CL}
+   		}# end COMPARTMENT
+
+ 	KPCA=ln(2)/TEQ
+    RPCA=PCA0*KPCA
+	DEQ{
+      CC=CENTRAL/V
+      DPCA=PCA
+      PD=1-EMAX*CC/(C50+CC)			
+      PCA : {deriv=RPCA*PD - KPCA*DPCA, init = PCA0}
+   	  }# end ODE
+   }# end MODEL_PREDICTION
+
+	RANDOM_VARIABLE_DEFINITION(level=DV){
+      EPS_CP ~ Normal( mean=0, var=1)
+      EPS_PCA ~ Normal( mean=0, var=1)
+	}
+
+   OBSERVATION{
+   	 CP_obs : {type is combinedError1, additive = RUV_ADD, proportional = RUV_PROP, eps = EPS_CP, prediction = CC } 
+     PCA_obs : {type is additiveError, additive = RUV_FX, eps = EPS_PCA, prediction = PCA }
+   }# end OBSERVATION
+} # end of model object
+
+warfarin_PKPD_turnover_task = taskObj {
+ESTIMATE{ 
+		set algo is saem
+}
+} # end of task object
+
+warfarin_PK_ODE_mog = mogObj {
+    OBJECTS{
+		warfarin_PKPD_turnover_dat : { type is dataObj }
+		warfarin_PKPD_turnover_mdl : { type is mdlObj }
+		warfarin_PKPD_turnover_par : { type is parObj }
+		warfarin_PKPD_turnover_task : { type is taskObj }
+	}
+}
