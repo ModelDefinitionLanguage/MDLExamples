@@ -1,0 +1,253 @@
+# UseCase5 : categorical and continuous covariate model for CL. Uses "type is linear" specification.
+# Warfarin population pharmacokinetic model with categorical and transformed covariates
+# Dosing regimen: single oral administration (at time 0)
+# Structural model : 1 compartment model (CL,V and TLAG)
+# Covariate model : Weight on V and CL, SEX on CL and AGE on CL 
+# Variability model: 
+#   - IIV on CL, V, ka and TLAG
+#   - Correlation between CL and V random variables
+#   - Combined residual error model
+
+warfarin_PK_covariate_dat = dataObj {
+## The Data Object needs to be self-contained in its definitions to be "modular".
+## If we refer to model variables, then we need to map the attributes of those
+## variables into the Data Object, declare them and define their "type" within the 
+## Model Object. 
+# Here AMT is defined as "use is amt" with variable INPUT_KA 
+# which is declared as a dosingTarget type
+	DECLARED_VARIABLES{
+		INPUT_KA :: dosingTarget
+		Y ::observation
+	}
+	
+## In the DATA_INPUT_VARIABLES block we define the columns of the data
+## naming them and defining their use. Through the variable argument
+## we can map data variables to model variables. Items should be defined
+## in the order they appear in the dataset (specified in the SOURCE block).
+## Currently we also need to match the names of the DATA_INPUT_VARIABLES
+## with the header row from the SOURCE data file. For use with Monolix,
+## the case must match between definition in this block and the header row
+## from the SOURCE data file.
+##  Note that DATA_INPUT_VARIABLES cannot have more than one use.
+## See MDL User Guide section 10.2
+	DATA_INPUT_VARIABLES {
+# Defining as id maps to individual / subject variability level
+		ID : { use is id }
+# Defining as idv maps TIME to the independent variable in the model. 
+# Note TIME in data is matched / mapped to T in the comparments & ODE solver.
+		TIME : { use is idv }
+# Defining as covariate identifies this as a possible input to the covariate 
+# model definition.
+		WT : { use is covariate }
+		AGE : { use is covariate }
+# With categorical covariates, we need to define the levels of the variable
+# AND how these map to numeric values in the data. 
+# In the model definition we will refer only to "female" and "male" categories
+# allowing us to specify the model independent of the data values
+		SEXF : {use is catCov withCategories {female when 1, male when 0} }
+# Defining as amt enables this variable to be passed to 
+# type dosingTarget or dosingVar variables in the model
+# Here AMT is mapped to the INPUT_KA variable 
+		AMT : { use is amt, variable = INPUT_KA } 
+# Defining as divd enables us to reference more than one model 
+# observation variable and map to the data
+		DVID : { use is dvid}
+# Defining as dv maps to observation type variables in the model
+		DV : { use is dv, variable = Y }
+# Signifies missing data variable
+		MDV : { use is mdv } 
+	} # end DATA_INPUT_VARIABLES
+	
+	SOURCE {
+      srcfile : {file="warfarin_conc_sexf.csv", 
+      			 inputFormat is nonmemFormat} 
+	} # end SOURCE
+} # end data object
+
+
+warfarin_PK_covariate_par = parObj {
+	# By default a parameter is to be estimated if fix is omitted
+ 	STRUCTURAL {
+		POP_CL : { value = 0.1, lo = 0.001 }
+		POP_V : { value = 8, lo = 0.001 } 
+		POP_KA : { value = 0.362, lo = 0.001 }
+		POP_TLAG : { value=1, lo=0.001 }
+		BETA_CL_WT : { value = 0.75, fix = true }
+		BETA_V_WT : { value = 1, fix = true } 
+		BETA_CL_AGE : { value=0.001 }
+		POP_FCL_FEM : { value=1, lo = 0 }
+		} # end STRUCTURAL
+	VARIABILITY {
+		PPV_CL : { value = 0.1 }
+		PPV_V : { value = 0.1 }
+		PPV_KA : { value = 0.1 }
+		PPV_TLAG : { value = 0.1, fix=true }
+		PPV_FORAL : { value = 0.1 }
+# Note we provide an initial value for the correlation
+# See also UseCase6_3 for an example of a matrix specification 
+# for the inter-individual variability
+		CORR_CL_V : { value = 0.01 }
+# Note that residual variability is specified as VARIABILITY
+# parameter, even though it multiplies the N(0,1) EPS random variable.
+		RUV_PROP : { value = 0.1, lo = 0 }
+		RUV_ADD : { value = 0.1, lo = 0.0001 } 		
+	} # end VARIABILITY
+} # end of parameter object 
+
+warfarin_PK_covariate_mdl = mdlObj {
+## Specify the independent variable. Typically this will be T for use in ODEs, 
+## but could be any name. MDL has no reserved variable names.
+	IDV { T }
+	
+	COVARIATES{
+## Declare the covariates and specify covariate transformations
+		WT
+		AGE
+# We define SEXF as a covariate with two categories: female and male
+# This allows us to refer to SEXF.female in the INDIVIDUAL_VARIABLES 
+# definition below, regardless of what the data numeric value is.
+# Mapping between numeric values and categories is handled in the Data Object
+# DATA_INPUT_VARIABLES definition where "use is catcov".
+		SEXF withCategories {female, male} 
+# In UseCase1 we had logtWT as a data column.
+# Here we calculate this in the COVARIATES section
+		logtWT = ln(WT/70)
+# Similarly, tAGE (transformed AGE) is calculated here instead of 
+# being passed through as a data column.
+		tAGE = AGE - 40
+	}
+
+	VARIABILITY_LEVELS(reference=ID){
+	## Identify model hierarchy levels and which variables are associated with each.
+		ID : { level = 2, type is parameter }
+		DV : { level = 1, type is observation }
+	}
+
+	STRUCTURAL_PARAMETERS {
+	## Declare Structural / fixed effect parameters
+		POP_CL
+		POP_V
+		POP_KA
+		POP_TLAG
+		BETA_CL_WT
+		BETA_CL_AGE
+		BETA_V_WT
+		POP_FCL_FEM
+	} # end STRUCTURAL_PARAMETERS
+	
+	VARIABILITY_PARAMETERS {
+	## Declare Variability / random effect parameters
+		PPV_CL
+		PPV_V
+	## Note that we declare and name the correlation parameter in this example. See also UseCase6.
+		CORR_CL_V
+		PPV_KA
+		PPV_TLAG
+	## Note that residual parameters are in Variability even though these multiply the random N(0,1).
+		RUV_PROP
+		RUV_ADD
+		} # end VARIABILITY_PARAMETERS 
+
+	RANDOM_VARIABLE_DEFINITION(level=ID) {
+	## When defining a RV we must also specify what level of hierarchy.
+	## To the right of the "~" is a distribution. 
+	## See MDL User Guide section 9.6.2 for a list of supported distributions.
+	## Normal(mean, sd) maps to ProbOnto Normal1 definition
+	## Normal(mean, var) maps to ProbOnto Normal2 definition
+	    ETA_CL ~ Normal(mean = 0, sd = PPV_CL)
+		ETA_V ~ Normal(mean = 0, sd = PPV_V)
+	## To define a correlation we don't need to specify a distribution
+	## and the variable CORR_CL_V has already been declared (above), so
+	## we just need to specify that CORR_CL_V is a correlation.
+	## We use an "anonymous list" signified by :: having type "correlation".
+	## Correlations are not "used" in the model per se.
+		:: {type is correlation, rv1=ETA_CL, rv2=ETA_V, value=CORR_CL_V}		
+		ETA_KA ~ Normal(mean = 0, sd = PPV_KA)
+		ETA_TLAG ~ Normal(mean = 0, sd = PPV_TLAG) # We define correlation here
+	} # end RANDOM_VARIABLE_DEFINITION 
+	
+	INDIVIDUAL_VARIABLES { # This maps to the "Type 3" individual parameter definition in PharmML
+	## Declaring the "type" of individual level variables 
+	## and their relations to parameters, covariates, random effects.
+	## We can get some benefits in translation (e.g. MU referencing) if we can specify precisely 
+	## the relationships, transformations etc.
+	## Within fixEff we have a "sublist" with arguments defining the covariates and their associated coefficients.
+	## We use square brackets to denote a vector of fixEff attributes.
+	## Note that the catCov covariate points to SEXF (categorical covariate) and the "female" category within it.
+	    CL : {type is linear, trans is ln, pop = POP_CL, fixEff = [
+	    	  {coeff = BETA_CL_WT, cov = logtWT},
+	    	  {coeff = POP_FCL_FEM, catCov = SEXF.female },
+	    	  {coeff = BETA_CL_AGE, cov = tAGE}
+	    	  ], 
+			  ranEff = ETA_CL }
+	    V : {type is linear, trans is ln, pop = POP_V, fixEff = {coeff=BETA_V_WT, cov=logtWT} , ranEff = ETA_V }
+	    KA : {type is linear, trans is ln, pop = POP_KA, ranEff = ETA_KA }
+	    TLAG : {type is linear, trans is ln, pop = POP_TLAG, ranEff = ETA_TLAG }
+	} # end INDIVIDUAL_VARIABLES
+
+	
+	MODEL_PREDICTION {
+	## The COMPARTMENT block allows the modeller to define PK compartments, flows and processes simply.
+	## By combining compartments quite complex models can be built without having to specify systems of ODEs.
+	## By specifying as compartments, we can also hook into closed form solutions for some models, where these
+	## exist.
+		COMPARTMENT {
+		# depot & direct compartments can be dosingTarget variables
+		# direct specifies bolus or zero-order processes
+		# depot specifies first-order, zero-order or transit chain drug input processes.
+		# See MDL User Guide section 4.10.3.1 
+		# Note that we specify a compartment that drug flows "to"
+			INPUT_KA      : {type is depot, to=CENTRAL, ka=KA, tlag=TLAG}
+		# "type is compartment" definition specifies a distribution compartment.
+		# An alternative is a "distribution" compartment e.g. peripheral which
+		# will specify which compartment drug flow comes "from" and also "kin" and "kout".
+		# Another possible compartment has type "effect" which will specify
+		# which compartment drug flow comes "from" and also "keq"
+			CENTRAL       : {type is compartment}
+		# Unless the elimination amount is required to be measured, we can use an 
+		# anonymous list, signified by :: and having type "elimination". 
+		# In this compartment we also specify the volume of distribution 
+		# in the compartment defined in the "from" argument 
+		# and elimination parameter as "k" or "cl".
+		# Optionally, you can specify "from", "vm" and "km" to define nonlinear
+		# Michaelis-Menten elimination process.
+		# Another option here is the "transfer" type of compartment which specifies
+		# where drug comes "from", where it goes "to" and a "kt" transfer constant.
+                     	 :: {type is elimination, from=CENTRAL, v=V, cl=CL}
+   		}# end COMPARTMENT
+   		
+   		## It is possible and sometimes preferable to define a mixture of COMPARTMENTS and DEQs
+   		## See UseCase4_2 for an example.
+
+	    CC = CENTRAL / V 
+	} # end MODEL_PREDICTION
+	
+	RANDOM_VARIABLE_DEFINITION(level=DV) {
+	## When defining a RV we must also specify what level of hierarchy.
+		EPS_Y ~ Normal(mean = 0, var = 1) # This maps the standard error model in PharmML. The error model is predefined. 
+	} # end RANDOM_VARIABLE_DEFINITION 
+
+	OBSERVATION {
+	## Within OBSERVATION block we have some special list types that allow specification of 
+	## common error models. In these the list arguments depend on the type specified.
+	## type is userDefined is also permitted, but must have arguments value, weight, prediction
+	## for calculation of residuals, weighted residuals by the estimation target software
+	    Y : {type is combinedError1, additive = RUV_ADD, proportional = RUV_PROP, eps = EPS_Y, prediction = CC } 
+	} # end OBSERVATION
+} # end of model object
+
+warfarin_PK_ODE_task = taskObj {
+	ESTIMATE{ 
+		set algo is saem
+	}
+} # end of task object
+
+
+warfarin_PK_ODE_mog = mogObj {
+	OBJECTS{
+		warfarin_PK_covariate_dat : { type is dataObj }
+		warfarin_PK_covariate_par : { type is parObj }
+		warfarin_PK_covariate_mdl : { type is mdlObj }
+		warfarin_PK_ODE_task : { type is taskObj }
+	}
+}

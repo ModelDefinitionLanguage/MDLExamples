@@ -1,0 +1,198 @@
+# UseCase1 : Single dose with structural model as ODEs.
+# Warfarin population pharmacokinetic model using ordinary differential equations (ODE)
+# Dosing regimen: single oral administration (at time 0)
+# Structural model : 1 compartment model (CL,V and TLAG)
+# Covariate model : Weight on V and CL 
+# Variability model: 
+#   - IIV on CL, V, ka and TLAG
+#   - Correlation between CL and V random variables
+#   - Combined residual error model
+
+  
+warfarin_PK_ODE_dat = dataObj {
+## The Data Object needs to be self-contained in its definitions to be "modular".
+## If we refer to model variables, then we need to map the attributes of those
+## variables into the Data Object, declare them and define their "type" within the 
+## Model Object.  See also UseCase12 & UseCase13 to see how we declare categorical
+## observation variables.
+	DECLARED_VARIABLES{GUT::dosingTarget Y::observation}
+
+## In the DATA_INPUT_VARIABLES block we define the columns of the data
+## naming them and defining their use. Through the variable argument
+## we can map data variables to model variables. Items should be defined
+## in the order they appear in the dataset (specified in the SOURCE block).
+## Currently we also need to match the names of the DATA_INPUT_VARIABLES
+## with the header row from the SOURCE data file. For use with Monolix,
+## the case must match between definition in this block and the header row
+## from the SOURCE data file.
+##  Note that DATA_INPUT_VARIABLES cannot have more than one use.
+## See MDL User Guide section 10.2
+	DATA_INPUT_VARIABLES {
+# Defining as id maps to individual / subject variability level
+		ID : { use is id }
+# Defining as idv maps TIME to the independent variable in the model. 
+# Note TIME in data is matched / mapped to T in the ODE solver.
+		TIME : { use is idv }
+# Defining as covariate identifies this as a possible input to the covariate 
+# model definition.
+		WT : { use is covariate }
+# Defining as amt enables this variable to be passed to 
+# type dosingTarget or dosingVar variables in the model
+		AMT : { use is amt, variable = GUT }
+# Defining as divd enables us to reference more than one model 
+# observation variable and map to the data
+		DVID : { use is dvid}
+# Defining as dv maps to observation type variables in the model
+		DV : { use is dv, variable = Y}
+# Signifies missing data variable
+		MDV : { use is mdv }
+		logtWT:{ use is covariate }  
+	} # end DATA_INPUT_VARIABLES
+	
+	SOURCE {
+	    srcfile : {file = "warfarin_conc.csv", 
+            inputFormat is nonmemFormat } 
+	} # end SOURCE
+} # end data object
+
+warfarin_PK_ODE_par = parObj {
+	# By default a parameter is to be estimated if fix is omitted
+ 	STRUCTURAL {
+		POP_CL : { value = 0.1, lo = 0.001 }
+		POP_V : { value = 8, lo = 0.001 } 
+		POP_KA : { value = 0.362, lo = 0.001 }
+		POP_TLAG : { value=1, lo=0.001 }
+		BETA_CL_WT : { value = 0.75, fix = true }
+		BETA_V_WT : { value = 1, fix = true } 
+		} # end STRUCTURAL
+	VARIABILITY {
+		PPV_CL : { value = 0.1 }
+		PPV_V : { value = 0.1 }
+		PPV_KA : { value = 0.1 }
+		PPV_TLAG : { value = 0.1, fix=true }
+# Note we provide an initial value for the correlation
+# See also UseCase6_3 for an example of a matrix specification 
+# for the inter-individual variability
+		CORR_CL_V : { value = 0.01 }
+# Note that residual variability is specified as VARIABILITY
+# parameter, even though it multiplies the N(0,1) EPS random variable.
+		RUV_PROP : { value = 0.1, lo = 0 }
+		RUV_ADD : { value = 0.1, lo = 0.0001 } 	
+		} # end VARIABILITY
+} # end of parameter object 
+
+warfarin_PK_ODE_mdl = mdlObj {
+## Specify the independent variable. Typically this will be T for use in ODEs, 
+## but could be any name. MDL has no reserved variable names.
+	IDV{ T }  
+
+	COVARIATES{ 
+	## Declare the covariates and specify covariate transformations
+		logtWT
+	}
+
+	VARIABILITY_LEVELS(reference=ID){ 
+	## Identify model hierarchy levels and which variables are associated with each.
+		ID : { level=2, type is parameter }
+		DV : { level=1, type is observation }
+	} 
+
+	STRUCTURAL_PARAMETERS { 
+	## Declare Structural / fixed effect parameters
+		POP_CL
+		POP_V
+		POP_KA
+		POP_TLAG
+		BETA_CL_WT
+		BETA_V_WT
+	} # end STRUCTURAL_PARAMETERS
+	
+	VARIABILITY_PARAMETERS { 
+	## Declare Variability / random effect parameters
+		PPV_CL
+		PPV_V
+		## Note that we declare and name the correlation parameter in this example. See also UseCase6.
+		CORR_CL_V  
+		PPV_KA
+		PPV_TLAG
+		## Note that residual parameters are in Variability even though these multiply the random N(0,1).
+		RUV_PROP 
+		RUV_ADD
+		} # end VARIABILITY_PARAMETERS 
+	
+	RANDOM_VARIABLE_DEFINITION(level=ID) { 
+	## When defining a RV we must also specify what level of hierarchy.
+	## To the right of the "~" is a distribution. 
+	## See MDL User Guide section 9.6.2 for a list of supported distributions.
+	## Normal(mean, sd) maps to ProbOnto Normal1 definition
+	## Normal(mean, var) maps to ProbOnto Normal2 definition
+		ETA_CL ~ Normal(mean=0, sd = PPV_CL) 
+		ETA_V ~ Normal(mean = 0, sd = PPV_V)
+		ETA_KA ~ Normal(mean = 0, sd = PPV_KA)
+	## To define a correlation we don't need to specify a distribution
+	## and the variable CORR_CL_V has already been declared (above), so
+	## we just need to specify that CORR_CL_V is a correlation.
+	## We use an "anonymous list" signified by :: having type "correlation".
+	## Correlations are not "used" in the model per se.
+		:: {type is correlation, rv1=ETA_CL, rv2=ETA_V, value=CORR_CL_V}
+		ETA_TLAG ~ Normal(mean = 0, sd = PPV_TLAG)
+	} # end RANDOM_VARIABLE_DEFINITION 
+
+	
+	INDIVIDUAL_VARIABLES { 
+	## Declaring the "type" of individual level variables 
+	## and their relations to parameters, covariates, random effects.
+	## We can get some benefits in translation (e.g. MU referencing) if we can specify precisely 
+	## the relationships, transformations etc.
+	## Within fixEff we have a "sublist" with arguments defining the covariates and their associated coefficients.
+		CL : {type is linear, trans is ln, pop = POP_CL, fixEff = {coeff=BETA_CL_WT, cov=logtWT} , ranEff = ETA_CL}
+		V :  {type is linear, trans is ln, pop = POP_V, fixEff = {coeff=BETA_V_WT, cov=logtWT} , ranEff = ETA_V }
+	    KA : {type is linear, trans is ln, pop = POP_KA, ranEff = ETA_KA }
+	    TLAG : {type is linear, trans is ln, pop = POP_TLAG, ranEff = ETA_TLAG }
+	} # end INDIVIDUAL_VARIABLES
+
+	MODEL_PREDICTION {
+	## DEQ is optional, but helps the reader by collecting ODE definitions.
+		DEQ{
+		## Note the use of if... then... else...
+		## Note also that if... then... else appears on the RHS of the equation.
+		## i.e. we define RATEIN ONCE, and it ALWAYS takes a value.
+			RATEIN = if(T >= TLAG) then GUT * KA  
+					 else 0
+		## Because these two lists are in "MODEL_PREDICTION" and have key attribute "deriv" we know these are ODEs
+		## init and x specification are optional.
+			GUT : { deriv =(- RATEIN), init = 0, x0 = 0 }
+			CENTRAL : { deriv =(RATEIN - CL * CENTRAL / V), init = 0, x0 = 0 } 
+		}
+	    CC = CENTRAL / V 
+	} # end MODEL_PREDICTION
+	
+	RANDOM_VARIABLE_DEFINITION(level=DV){
+	## When defining a RV we must also specify what level of hierarchy.
+	    EPS_Y ~ Normal(mean = 0, var = 1) 
+	}
+
+	OBSERVATION {
+	## Within OBSERVATION block we have some special list types that allow specification of 
+	## common error models. In these the list arguments depend on the type specified.
+	## type is userDefined is also permitted, but must have arguments value, weight, prediction
+	## for calculation of residuals, weighted residuals by the estimation target software
+	    Y : {type is combinedError1, additive = RUV_ADD, proportional = RUV_PROP, eps = EPS_Y, prediction = CC} 
+	} # end OBSERVATION
+} # end of model object
+
+warfarin_PK_ODE_task = taskObj {
+	ESTIMATE{ 
+		set algo is saem
+	}
+} # end of task object
+
+
+warfarin_PK_ODE_mog = mogObj {
+	OBJECTS{
+		warfarin_PK_ODE_dat : { type is dataObj }
+		warfarin_PK_ODE_mdl : { type is mdlObj }
+		warfarin_PK_ODE_par : { type is parObj }
+		warfarin_PK_ODE_task : { type is taskObj }
+	}
+}
