@@ -1,4 +1,3 @@
-# UseCase5 : categorical and continuous covariate model for CL. Uses "type is linear" specification.
 # Warfarin population pharmacokinetic model with categorical and transformed covariates
 # Dosing regimen: single oral administration (at time 0)
 # Structural model : 1 compartment model (CL,V and TLAG)
